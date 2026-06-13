@@ -1,0 +1,101 @@
+{
+  "name": "script-pilot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first desktop screenwriting studio with FDX compatibility.",
+  "type": "module",
+  "main": "out/main/main.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "tsc --noEmit && electron-vite build",
+    "preview": "electron-vite preview",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never",
+    "dist:mac": "npm run build && electron-builder --mac dmg zip --universal --publish never",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.1.2",
+    "clsx": "latest",
+    "fast-xml-parser": "latest",
+    "lucide-react": "latest",
+    "prosemirror-commands": "latest",
+    "prosemirror-history": "latest",
+    "prosemirror-keymap": "latest",
+    "prosemirror-model": "latest",
+    "prosemirror-schema-basic": "latest",
+    "prosemirror-state": "latest",
+    "prosemirror-view": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "uuid": "latest",
+    "yjs": "latest",
+    "zustand": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@types/uuid": "latest",
+    "electron": "latest",
+    "electron-builder": "latest",
+    "electron-vite": "^5.0.0",
+    "jsdom": "latest",
+    "typescript": "latest",
+    "vite": "^7.3.5",
+    "vitest": "latest"
+  },
+  "build": {
+    "appId": "com.twoastronauts.scriptpilot",
+    "productName": "Script Pilot",
+    "artifactName": "Script-Pilot-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "src/assets/script-pilot-icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "mac": {
+      "icon": "src/assets/script-pilot-icon.icns",
+      "category": "public.app-category.productivity",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ]
+    },
+    "fileAssociations": [
+      {
+        "ext": "spx",
+        "name": "Script Pilot Project",
+        "description": "Script Pilot project file",
+        "icon": "src/assets/script-pilot-icon",
+        "role": "Editor"
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

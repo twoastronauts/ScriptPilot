@@ -1,0 +1,137 @@
+import { useMemo, useState } from 'react';
+import type * as React from 'react';
+import { Eraser, Plus, Sparkles } from 'lucide-react';
+import { buildProductionReports } from '@/shared/reports';
+import { useWorkspace } from '@/store/workspace';
+import type { ProductionTag } from '@/shared/types';
+
+const categories: ProductionTag['category'][] = ['prop', 'wardrobe', 'cast', 'vehicle', 'vfx', 'sound', 'location', 'custom'];
+
+export function ProductionPanel() {
+  const {
+    document,
+    selectedElementId,
+    addProductionTagToSelected,
+    addScriptNoteToSelected,
+    toggleOmitSelected,
+    setRevisionMode,
+    setActiveRevisionSet,
+    updateRevisionSet,
+    markSelectedRevised,
+    clearSelectedRevision
+  } = useWorkspace();
+  const selected = document.elements.find((element) => element.id === selectedElementId);
+  const activeRevision = document.revisions.find((revision) => revision.active) ?? document.revisions[0];
+  const revisionCount = document.elements.filter((element) => element.revisionColor).length;
+  const [label, setLabel] = useState('');
+  const [category, setCategory] = useState<ProductionTag['category']>('prop');
+  const [note, setNote] = useState('');
+  const reports = useMemo(() => buildProductionReports(document), [document]);
+
+  function addTag() {
+    if (!label.trim()) return;
+    addProductionTagToSelected({ label: label.trim(), category, color: '#2f6fed' });
+    setLabel('');
+  }
+
+  function addNote() {
+    addScriptNoteToSelected(note);
+    setNote('');
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-title">
+        <span>Notes / Revisions</span>
+        <small>{selected ? selected.type : 'No selection'}</small>
+      </div>
+      <div className="form-row">
+        <select value={category} onChange={(event) => setCategory(event.target.value as ProductionTag['category'])}>
+          {categories.map((item) => (
+            <option key={item} value={item}>
+              {item}
+            </option>
+          ))}
+        </select>
+        <input placeholder="Tag label" value={label} onChange={(event) => setLabel(event.target.value)} />
+        <button title="Add tag" onClick={addTag}>
+          <Plus size={15} />
+        </button>
+      </div>
+      <div className="form-row">
+        <input placeholder="ScriptNote" value={note} onChange={(event) => setNote(event.target.value)} />
+        <button title="Add note" onClick={addNote}>
+          <Plus size={15} />
+        </button>
+      </div>
+
+      <div className="revision-card">
+        {activeRevision && (
+          <div className="revision-status" style={{ '--active-revision': activeRevision.color } as React.CSSProperties}>
+            <span>{revisionCount}</span>
+            <strong>{activeRevision.name}</strong>
+          </div>
+        )}
+        <label className="revision-toggle">
+          <span>
+            <strong>Revision Mode</strong>
+            <small>{activeRevision ? activeRevision.name : 'No revision set'}</small>
+          </span>
+          <input type="checkbox" checked={document.settings.revisionMode} onChange={(event) => setRevisionMode(event.target.checked)} />
+        </label>
+
+        <select value={activeRevision?.id ?? ''} onChange={(event) => setActiveRevisionSet(event.target.value)}>
+          {document.revisions.map((revision) => (
+            <option key={revision.id} value={revision.id}>
+              {revision.name}
+            </option>
+          ))}
+        </select>
+
+        {activeRevision && (
+          <>
+            <div className="revision-fields">
+              <label>
+                <span>Revision mark</span>
+                <input value={activeRevision.mark ?? '*'} maxLength={2} onChange={(event) => updateRevisionSet(activeRevision.id, { mark: event.target.value || '*' })} />
+              </label>
+            </div>
+            <div className="revision-palette" aria-label="Revision set colors">
+              {document.revisions.map((revision) => (
+                <button
+                  key={revision.id}
+                  title={revision.name}
+                  className={revision.id === activeRevision.id ? 'is-active' : ''}
+                  style={{ '--revision-chip': revision.color } as React.CSSProperties}
+                  onClick={() => setActiveRevisionSet(revision.id)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="segmented">
+          <button onClick={markSelectedRevised} disabled={!selected}>
+            <Sparkles size={14} />
+            <span>Mark revised</span>
+          </button>
+          <button onClick={clearSelectedRevision} disabled={!selected?.revisionColor}>
+            <Eraser size={14} />
+            <span>Clear mark</span>
+          </button>
+          <button onClick={toggleOmitSelected} disabled={!selected}>
+            <span>Omit</span>
+          </button>
+        </div>
+      </div>
+
+      <h3>Reports</h3>
+      {reports.map((report) => (
+        <div key={`${report.category}:${report.label}`} className="report-row">
+          <span>{report.label}</span>
+          <small>{report.category} x{report.count}</small>
+        </div>
+      ))}
+    </section>
+  );
+}
