@@ -1,9 +1,7 @@
 import { useMemo } from 'react';
-import { AlertTriangle, CheckCircle2, FileClock, Lightbulb, MessageSquareText, Sparkles } from 'lucide-react';
-import { analyzeDialogue } from '@/shared/dialogueStudio';
+import { AlertTriangle, CheckCircle2, FileClock, Lightbulb, MessageSquareText, Sparkles, Stethoscope } from 'lucide-react';
 import { createProductionPaginationPlan } from '@/shared/formattingV2';
-import { scanProofingIssues } from '@/shared/proofing';
-import { analyzeScript } from '@/shared/storyAssistant';
+import { runScriptDoctor, type OverusedWordIssue } from '@/shared/scriptDoctor';
 import { computeWritingStats } from '@/shared/stats';
 import { useWorkspace } from '@/store/workspace';
 import type { StoryCheckResult } from '@/shared/types';
@@ -11,26 +9,24 @@ import type { StoryCheckResult } from '@/shared/types';
 export function WriterAssistantPanel() {
   const { document, setSelectedElement, captureDraftVersion, createRevisionMemo } = useWorkspace();
   const stats = useMemo(() => computeWritingStats(document), [document]);
-  const storyChecks = useMemo(() => analyzeScript(document), [document]);
-  const proofingChecks = useMemo(() => scanProofingIssues(document), [document]);
-  const dialogue = useMemo(() => analyzeDialogue(document), [document]);
+  const report = useMemo(() => runScriptDoctor(document), [document]);
   const pagination = useMemo(() => createProductionPaginationPlan(document.elements, document.settings.pageNumberStart), [document.elements, document.settings.pageNumberStart]);
-  const allChecks = [...storyChecks, ...proofingChecks];
-  const strongCount = allChecks.filter((check) => check.severity === 'strong').length;
-  const warningCount = allChecks.filter((check) => check.severity === 'warning').length;
+  const warningCount = report.checks.filter((check) => check.severity !== 'note').length + report.overusedWords.filter((issue) => issue.severity !== 'note').length;
 
   return (
     <section className="panel writer-assistant-panel">
       <div className="panel-title">
-        <span>V02 Assistant</span>
-        <Sparkles size={16} />
+        <span>Script Doctor</span>
+        <Stethoscope size={16} />
       </div>
 
       <div className="metric-grid">
-        <Metric label="Checks" value={allChecks.length} />
-        <Metric label="Warnings" value={warningCount + strongCount} />
+        <Metric label={report.grade} value={report.score} />
+        <Metric label="Doctor Notes" value={report.checks.length} />
+        <Metric label="Warnings" value={warningCount} />
+        <Metric label="Typos" value={report.spellingIssueCount} />
+        <Metric label="Overused" value={report.overusedWords.length} />
         <Metric label="MORE" value={pagination.moreAfterElementIds.length} />
-        <Metric label="CONT'D" value={pagination.continuedCharacterElementIds.length} />
       </div>
 
       <div className="segmented">
@@ -44,9 +40,19 @@ export function WriterAssistantPanel() {
         </button>
       </div>
 
-      <h3>Scene Intelligence</h3>
-      {allChecks.length ? (
-        allChecks.slice(0, 12).map((check) => <CheckRow key={check.id} check={check} onSelect={setSelectedElement} />)
+      <h3>Prescription</h3>
+      <div className="doctor-summary">
+        {report.summary.map((line) => (
+          <p key={line}>
+            <Sparkles size={14} />
+            <span>{line}</span>
+          </p>
+        ))}
+      </div>
+
+      <h3>Doctor Notes</h3>
+      {report.checks.length ? (
+        report.checks.slice(0, 14).map((check) => <CheckRow key={check.id} check={check} onSelect={setSelectedElement} />)
       ) : (
         <div className="home-empty">
           <strong>Clean pass</strong>
@@ -54,8 +60,15 @@ export function WriterAssistantPanel() {
         </div>
       )}
 
+      <h3>Overused Words</h3>
+      {report.overusedWords.length ? (
+        report.overusedWords.slice(0, 10).map((issue) => <OverusedRow key={issue.word} issue={issue} onSelect={setSelectedElement} />)
+      ) : (
+        <p className="report-row">No overused words crossed the doctor threshold.</p>
+      )}
+
       <h3>Dialogue Tuner</h3>
-      {dialogue.slice(0, 6).map((analysis) => (
+      {report.dialogue.slice(0, 6).map((analysis) => (
         <div key={analysis.characterName} className="shot-row">
           <strong>{analysis.characterName}</strong>
           <span>
@@ -66,7 +79,7 @@ export function WriterAssistantPanel() {
           </small>
         </div>
       ))}
-      {!dialogue.length && <p className="report-row">Dialogue analysis appears after character cues and dialogue lines.</p>}
+      {!report.dialogue.length && <p className="report-row">Dialogue analysis appears after character cues and dialogue lines.</p>}
 
       <h3>Draft Safety</h3>
       <div className="report-row">
@@ -105,6 +118,23 @@ function CheckRow({ check, onSelect }: { check: StoryCheckResult; onSelect: (id?
         <em>{check.suggestion}</em>
       </span>
       {check.category === 'dialogue' && <MessageSquareText size={14} />}
+    </button>
+  );
+}
+
+function OverusedRow({ issue, onSelect }: { issue: OverusedWordIssue; onSelect: (id?: string) => void }) {
+  const Icon = issue.severity === 'note' ? Lightbulb : AlertTriangle;
+  return (
+    <button className={`assistant-check assistant-check--${issue.severity}`} onClick={() => onSelect(issue.elementIds[0])} disabled={!issue.elementIds.length}>
+      <Icon size={15} />
+      <span>
+        <strong>
+          "{issue.word}" x{issue.count} ({issue.density}%)
+        </strong>
+        <small>{issue.message}</small>
+        <em>{issue.suggestions.length ? `Try: ${issue.suggestions.join(', ')}` : 'Try cutting repeats or making each beat more specific.'}</em>
+      </span>
+      <MessageSquareText size={14} />
     </button>
   );
 }

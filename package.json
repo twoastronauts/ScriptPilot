@@ -18,8 +18,10 @@
   "dependencies": {
     "@vitejs/plugin-react": "^5.1.2",
     "clsx": "latest",
+    "dictionary-en": "^4.0.0",
     "fast-xml-parser": "latest",
     "lucide-react": "latest",
+    "nspell": "^2.1.5",
     "prosemirror-commands": "latest",
     "prosemirror-history": "latest",
     "prosemirror-keymap": "latest",
@@ -29,6 +31,7 @@
     "prosemirror-view": "latest",
     "react": "latest",
     "react-dom": "latest",
+    "synonyms": "^1.0.1",
     "uuid": "latest",
     "yjs": "latest",
     "zustand": "latest"

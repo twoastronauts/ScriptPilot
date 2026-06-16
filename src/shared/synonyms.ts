@@ -1,3 +1,5 @@
+import { suggestSynonymGroups, suggestSynonymsFlat } from './languageTools';
+
 const SYNONYMS: Record<string, string[]> = {
   angry: ['furious', 'irritated', 'incensed', 'heated', 'livid'],
   ask: ['question', 'press', 'probe', 'request', 'wonder'],
@@ -222,9 +224,12 @@ const EXPANDED_SYNONYMS = buildExpandedSynonyms(SYNONYMS, SYNONYM_GROUPS);
 export function suggestSynonyms(word: string): string[] {
   const normalized = normalizeLookupWord(word);
   if (!normalized) return [];
-  const options = lookupSynonyms(normalized);
-  return preserveCase(word, options).filter((option) => option.toLowerCase() !== normalized).slice(0, 8);
+  const robustOptions = suggestSynonymsFlat(word, 18);
+  const options = robustOptions.length ? robustOptions : lookupSynonyms(normalized);
+  return preserveCase(word, options).filter((option) => option.toLowerCase() !== normalized).slice(0, 18);
 }
+
+export { suggestSynonymGroups };
 
 function lookupSynonyms(word: string): string[] {
   const candidates = lookupForms(word);

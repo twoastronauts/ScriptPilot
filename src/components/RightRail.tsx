@@ -12,7 +12,7 @@ import { useWorkspace } from '@/store/workspace';
 const tabs = [
   { id: 'beats', label: 'Beats', icon: Boxes },
   { id: 'characters', label: 'Characters', icon: Users },
-  { id: 'assistant', label: 'Assistant', icon: Sparkles },
+  { id: 'assistant', label: 'Script Doctor', icon: Sparkles },
   { id: 'stats', label: 'Stats', icon: BarChart3 },
   { id: 'production', label: 'Notes/Tags', icon: StickyNote },
   { id: 'studio', label: 'Shot List', icon: Clapperboard },

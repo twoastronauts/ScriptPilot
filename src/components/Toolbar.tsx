@@ -20,6 +20,8 @@ import {
   Sun,
   Timer,
   Type,
+  Redo2,
+  Undo2,
   Wand2
 } from 'lucide-react';
 import { useWorkspace } from '@/store/workspace';
@@ -213,6 +215,12 @@ export function Toolbar() {
         </button>
         <button title="Spelling suggestions" onClick={() => window.dispatchEvent(new CustomEvent('scriptpilot:request-spelling'))}>
           <Type size={17} />
+        </button>
+        <button title="Undo (Ctrl+Z)" onClick={() => window.dispatchEvent(new CustomEvent('scriptpilot:undo'))}>
+          <Undo2 size={17} />
+        </button>
+        <button title="Redo (Ctrl+Shift+Z)" onClick={() => window.dispatchEvent(new CustomEvent('scriptpilot:redo'))}>
+          <Redo2 size={17} />
         </button>
       </div>
       <div className="toolbar__group toolbar__theme" role="group" aria-label="Theme">

@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Highlighter, Keyboard } from 'lucide-react';
+import { ChevronDown, ChevronUp, Highlighter, Keyboard, Redo2, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { ELEMENT_LABELS } from '@/shared/screenplay';
 import { useWorkspace } from '@/store/workspace';
@@ -89,6 +89,14 @@ export function ShortcutBar() {
         <button title="Mark revision (Ctrl+Alt+R)" onClick={markSelectedRevised}>
           <Highlighter size={14} />
           <span>Revision</span>
+        </button>
+        <button title="Undo (Ctrl+Z)" onClick={() => window.dispatchEvent(new CustomEvent('scriptpilot:undo'))}>
+          <Undo2 size={14} />
+          <span>Undo</span>
+        </button>
+        <button title="Redo (Ctrl+Shift+Z)" onClick={() => window.dispatchEvent(new CustomEvent('scriptpilot:redo'))}>
+          <Redo2 size={14} />
+          <span>Redo</span>
         </button>
       </div>
       <button className="shortcut-toggle" title={expanded ? 'Collapse shortcuts' : 'Show all shortcuts'} onClick={() => setExpanded((value) => !value)}>

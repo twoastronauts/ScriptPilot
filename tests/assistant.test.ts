@@ -3,6 +3,9 @@ import { createDocumentFromPlainText } from '@/shared/defaultDocument';
 import { analyzeDialogue } from '@/shared/dialogueStudio';
 import { createDraftVersion, createProductionPaginationPlan, createRevisionMemo } from '@/shared/formattingV2';
 import { scanProofingIssues, suggestCorrections } from '@/shared/proofing';
+import { isCorrectlySpelled, suggestSpelling } from '@/shared/languageTools';
+import { runScriptDoctor } from '@/shared/scriptDoctor';
+import { suggestSynonymGroups } from '@/shared/synonyms';
 import { analyzeScript, buildSceneIntents } from '@/shared/storyAssistant';
 
 describe('V02 writer assistant', () => {
@@ -65,9 +68,34 @@ describe('V02 writer assistant', () => {
     const document = createDocumentFromPlainText('Proofing', 'INT. ROOM - DAY\nWe see the camera pan to a wierd door.');
     const issues = scanProofingIssues(document);
 
+    expect(isCorrectlySpelled('observatory')).toBe(true);
+    expect(isCorrectlySpelled('wierd')).toBe(false);
+    expect(suggestSpelling('wierd')).toContain('weird');
     expect(suggestCorrections('wierd')).toContain('weird');
     expect(suggestCorrections('suprise')).toContain('surprise');
     expect(issues.some((issue) => issue.title === 'Camera phrase')).toBe(true);
     expect(issues.some((issue) => issue.title === 'Director language')).toBe(true);
+    expect(issues.some((issue) => issue.title === 'Possible typo: wierd')).toBe(true);
+  });
+
+  it('uses a larger local thesaurus and script doctor overused-word report', () => {
+    const document = createDocumentFromPlainText(
+      'Doctor',
+      [
+        'INT. ROOM - NIGHT',
+        'Mara just looks at the door. She just looks at the key. She just looks at Jon.',
+        'MARA',
+        'I really need the key. I really need the key. I really need the key.',
+        'JON',
+        'You said key again.'
+      ].join('\n')
+    );
+    const report = runScriptDoctor(document);
+    const synonymGroups = suggestSynonymGroups('run');
+
+    expect(report.score).toBeLessThan(100);
+    expect(report.overusedWords.some((issue) => issue.word === 'just')).toBe(true);
+    expect(report.summary.some((line) => line.startsWith('Language pass:'))).toBe(true);
+    expect(synonymGroups.flatMap((group) => group.words)).toContain('sprint');
   });
 });

@@ -1,3 +1,4 @@
+import { findSpellingIssues, suggestSpelling } from './languageTools';
 import type { ScriptDocument, ScriptElement, StoryCheckResult } from './types';
 
 const COMMON_CORRECTIONS: Record<string, string[]> = {
@@ -150,7 +151,15 @@ export function suggestCorrections(word: string): string[] {
 
   const direct = COMMON_CORRECTIONS[normalized];
   const embedded = direct ? [] : embeddedCorrections(normalized);
-  const options = direct ?? (embedded.length ? embedded : nearestWords(normalized));
+  if (direct || embedded.length) {
+    const options = direct ?? embedded;
+    return preserveCase(word, options).filter((option) => option.toLowerCase() !== normalized).slice(0, 7);
+  }
+
+  const robust = suggestSpelling(word);
+  if (robust.length) return robust;
+
+  const options = nearestWords(normalized);
   return preserveCase(word, options).filter((option) => option.toLowerCase() !== normalized).slice(0, 7);
 }
 
@@ -168,7 +177,7 @@ export function correctionSpan(word: string): { start: number; end: number } {
 }
 
 export function scanProofingIssues(document: ScriptDocument): StoryCheckResult[] {
-  return document.elements.flatMap((element) => styleIssuesForElement(element));
+  return document.elements.flatMap((element) => [...styleIssuesForElement(element), ...spellingIssuesForElement(element)]);
 }
 
 export function styleIssuesForElement(element: ScriptElement): StoryCheckResult[] {
@@ -180,6 +189,19 @@ export function styleIssuesForElement(element: ScriptElement): StoryCheckResult[
     title: item.title,
     message: item.message,
     suggestion: item.suggestion,
+    elementId: element.id
+  }));
+}
+
+export function spellingIssuesForElement(element: ScriptElement): StoryCheckResult[] {
+  if (!['scene-heading', 'action', 'general', 'shot', 'dialogue', 'parenthetical'].includes(element.type)) return [];
+  return findSpellingIssues(element.text, 4).map((issue) => ({
+    id: `spelling:${element.id}:${issue.start}:${issue.word}`,
+    category: 'proofing',
+    severity: 'warning',
+    title: `Possible typo: ${issue.word}`,
+    message: issue.suggestions.length ? `Suggestions: ${issue.suggestions.slice(0, 4).join(', ')}` : 'The local US dictionary flagged this word.',
+    suggestion: 'Use Ctrl+. on the word, right-click it, or use the spelling button to replace it from the editor.',
     elementId: element.id
   }));
 }

@@ -538,6 +538,30 @@ export function ScreenplayEditor() {
   ]);
 
   useEffect(() => {
+    function runHistory(command: typeof undo) {
+      const view = viewRef.current;
+      if (!view) return;
+      command(view.state, view.dispatch, view);
+      view.focus();
+    }
+
+    function handleUndo() {
+      runHistory(undo);
+    }
+
+    function handleRedo() {
+      runHistory(redo);
+    }
+
+    window.addEventListener('scriptpilot:undo', handleUndo);
+    window.addEventListener('scriptpilot:redo', handleRedo);
+    return () => {
+      window.removeEventListener('scriptpilot:undo', handleUndo);
+      window.removeEventListener('scriptpilot:redo', handleRedo);
+    };
+  }, []);
+
+  useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
 
