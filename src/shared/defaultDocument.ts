@@ -2,6 +2,7 @@ import { v4 as uuid } from 'uuid';
 import { inferElementType, normalizeCharacterName } from './screenplay';
 import type {
   Beat,
+  CharacterArc,
   CharacterProfile,
   NavigatorTab,
   OutlineLane,
@@ -59,7 +60,8 @@ export function createDefaultSettings(): ProjectSettings {
     customPdfColors: true,
     revisionMode: false,
     showRevisionMarks: true,
-    showRevisionPageColors: true
+    showRevisionPageColors: true,
+    collabProvider: 'local'
   };
 }
 
@@ -124,6 +126,20 @@ export function createDefaultTitlePageStyles(): Record<string, TextStyle> {
   };
 }
 
+export function createDefaultCharacterArc(): CharacterArc {
+  return {
+    want: '',
+    need: '',
+    wound: '',
+    secret: '',
+    contradiction: '',
+    openingState: '',
+    closingState: '',
+    voiceNotes: '',
+    recurringProps: []
+  };
+}
+
 export function createDefaultBeats(): Beat[] {
   const openingId = uuid();
   const breakId = uuid();
@@ -142,6 +158,12 @@ export function createDefaultBeats(): Beat[] {
       showBody: true,
       showImage: true,
       showAudio: true,
+      act: 'Act One',
+      sequence: 'Opening',
+      goal: 'State the promise of the story.',
+      conflict: '',
+      payoffBeatIds: [finalId],
+      scriptSyncState: 'unlinked',
       outlineStartPage: 1,
       outlinePageSpan: 8
     },
@@ -159,6 +181,12 @@ export function createDefaultBeats(): Beat[] {
       showImage: true,
       showAudio: true,
       parentId: openingId,
+      act: 'Act Two',
+      sequence: 'Threshold',
+      goal: 'Force the protagonist into the main problem.',
+      conflict: '',
+      payoffBeatIds: [],
+      scriptSyncState: 'unlinked',
       outlineStartPage: 25,
       outlinePageSpan: 10
     },
@@ -176,6 +204,12 @@ export function createDefaultBeats(): Beat[] {
       showImage: true,
       showAudio: true,
       parentId: breakId,
+      act: 'Act Three',
+      sequence: 'Resolution',
+      goal: 'Echo the opening with transformation.',
+      conflict: '',
+      payoffBeatIds: [],
+      scriptSyncState: 'unlinked',
       outlineStartPage: 90,
       outlinePageSpan: 10
     }
@@ -210,7 +244,8 @@ export function createDocumentFromPlainText(title: string, text: string): Script
     aliases: [],
     color: ['#2f6fed', '#c24c3a', '#0f9f83', '#7b4fd6'][index % 4],
     description: '',
-    demographics: ''
+    demographics: '',
+    arc: createDefaultCharacterArc()
   }));
 
   const structureRanges: StructureRange[] = elements.find((element) => element.type === 'scene-heading')
@@ -251,6 +286,11 @@ export function createDocumentFromPlainText(title: string, text: string): Script
     revisions: createDefaultRevisions(),
     writingSessions: [],
     characters,
+    sceneIntents: [],
+    draftVersions: [],
+    revisionMemos: [],
+    collabRooms: [],
+    exportPackages: [],
     settings: createDefaultSettings(),
     createdAt: timestamp,
     updatedAt: timestamp

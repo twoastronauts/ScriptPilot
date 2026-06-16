@@ -1,11 +1,11 @@
 import type { ScriptDocument } from './types';
 
-const PROJECT_FORMAT_VERSION = 1;
+export const PROJECT_FORMAT_VERSION = 2;
 
 export function serializeProject(document: ScriptDocument): string {
   return JSON.stringify(
     {
-      format: 'script-pilot-project',
+      format: 'script-pilot-v02-project',
       version: PROJECT_FORMAT_VERSION,
       document
     },

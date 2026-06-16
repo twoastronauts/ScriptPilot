@@ -103,6 +103,15 @@ describe('production suite', () => {
     expect(firstSceneShots.some((shot) => shot.shotType === 'master' && shot.subject === 'KITCHEN')).toBe(true);
     expect(firstSceneShots.some((shot) => shot.shotType === 'coverage' && shot.subject === 'MARA')).toBe(true);
     expect(firstSceneShots.some((shot) => shot.shotType === 'insert' && shot.subject === 'Red phone')).toBe(true);
+    expect(firstSceneShots[0]).toEqual(
+      expect.objectContaining({
+        shotNumber: '1A',
+        cameraEquipment: expect.any(String),
+        cameraMovement: expect.any(String),
+        framing: expect.any(String),
+        setupMinutes: expect.any(Number)
+      })
+    );
   });
 
   it('builds call sheet contacts and recipients from characters and departments', () => {

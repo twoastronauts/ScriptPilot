@@ -87,7 +87,10 @@ function ShotList({ shots }: { shots: ProductionShot[] }) {
           </strong>
           <span>{shot.description || shot.subject}</span>
           <small>
-            {shot.shotType} - {shot.location} - {shot.timeOfDay} - {shot.estimatedMinutes}m setup
+            {shot.shotType} - {shot.framing} - {shot.cameraAngle} - {shot.cameraMovement}
+          </small>
+          <small>
+            {shot.location} - {shot.timeOfDay} - {shot.cameraEquipment} - {shot.setupMinutes}m setup
           </small>
         </div>
       ))}

@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - codex/**
   workflow_dispatch:
 
 permissions:
@@ -21,11 +22,11 @@ jobs:
           - name: Windows
             os: windows-latest
             command: npm run dist:win
-            artifact: Script-Pilot-Windows
+            artifact: Script-Pilot-V02-Windows
           - name: macOS
             os: macos-latest
             command: npm run dist:mac
-            artifact: Script-Pilot-Mac
+            artifact: Script-Pilot-V02-Mac
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"

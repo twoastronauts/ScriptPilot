@@ -188,6 +188,8 @@ textarea {
   --brass: #b88634;
   --teal: #437a73;
   --blue: #536c9f;
+  --warning: #b88634;
+  --danger: #9b332f;
   --focus: #b88634;
   --shadow-panel: 0 16px 34px rgba(48, 38, 27, 0.16);
   --shadow-page: 0 18px 44px rgba(45, 35, 24, 0.24);
@@ -237,6 +239,8 @@ textarea {
   --brass: #d0a15a;
   --teal: #66a79d;
   --blue: #8399cf;
+  --warning: #d0a15a;
+  --danger: #d46a64;
   --focus: #d0a15a;
   --shadow-panel: 0 18px 40px rgba(0, 0, 0, 0.34);
   --shadow-page: 0 20px 48px rgba(0, 0, 0, 0.42);
@@ -273,6 +277,8 @@ textarea {
   --brass: #caa15c;
   --teal: #55b8c7;
   --blue: #7ea0e5;
+  --warning: #caa15c;
+  --danger: #ff7777;
   --focus: #55b8c7;
   --shadow-panel: 0 18px 42px rgba(0, 0, 0, 0.44);
   --shadow-page: 0 22px 54px rgba(0, 0, 0, 0.58);
@@ -2927,6 +2933,19 @@ kbd {
   line-height: 1.35;
 }
 
+.character-arc-grid {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.character-arc-grid input {
+  min-width: 0;
+  min-height: 32px;
+  font-size: 11px;
+}
+
 .character-card i {
   --character-color: var(--accent);
   grid-row: 1 / 3;
@@ -3020,6 +3039,73 @@ kbd {
 .shot-row small {
   color: var(--muted);
   font-size: 11px;
+}
+
+.writer-assistant-panel h3 {
+  margin-top: 14px;
+}
+
+.assistant-check {
+  width: calc(100% - 24px);
+  height: auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  margin: 0 12px 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+  color: var(--text);
+  text-align: left;
+}
+
+.assistant-check:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.assistant-check--strong {
+  border-left-color: var(--danger);
+}
+
+.assistant-check--warning {
+  border-left-color: var(--warning);
+}
+
+.assistant-check > span {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.assistant-check strong,
+.assistant-check small,
+.assistant-check em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.assistant-check strong {
+  color: var(--text-strong);
+  font-size: 12px;
+}
+
+.assistant-check small {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.assistant-check em {
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
 }
 
 .shortcut-side-list {

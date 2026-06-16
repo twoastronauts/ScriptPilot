@@ -50,6 +50,21 @@ export interface ProductionTag {
   color: string;
 }
 
+export type StoryCheckCategory = 'structure' | 'scene' | 'dialogue' | 'character' | 'visual' | 'subtext' | 'production' | 'proofing';
+export type StoryCheckSeverity = 'note' | 'warning' | 'strong';
+
+export interface SceneIntent {
+  id: string;
+  sceneElementId: string;
+  sceneNumber: number;
+  want: string;
+  obstacle: string;
+  stakes: string;
+  turn: string;
+  emotionalAnchor?: string;
+  setupPayoff?: string;
+}
+
 export interface FdxParagraphShadow {
   rawParagraph?: unknown;
   originalIndex?: number;
@@ -97,6 +112,12 @@ export interface Beat {
   audioRecordedAt?: string;
   linkedElementId?: string;
   parentId?: string;
+  act?: string;
+  sequence?: string;
+  goal?: string;
+  conflict?: string;
+  payoffBeatIds?: string[];
+  scriptSyncState?: 'unlinked' | 'linked' | 'stale' | 'synced';
 }
 
 export interface OutlineLane {
@@ -143,6 +164,25 @@ export interface RevisionSet {
   lockedPages: number[];
 }
 
+export interface RevisionMemo {
+  id: string;
+  revisionSetId: string;
+  title: string;
+  body: string;
+  changedElementIds: string[];
+  createdAt: string;
+}
+
+export interface DraftVersion {
+  id: string;
+  label: string;
+  note?: string;
+  createdAt: string;
+  elementCount: number;
+  wordCount: number;
+  revisionSetId?: string;
+}
+
 export interface WritingSession {
   id: string;
   startedAt: string;
@@ -162,6 +202,59 @@ export interface CharacterProfile {
   description?: string;
   demographics?: string;
   userMetadata?: Record<string, string>;
+  arc?: CharacterArc;
+}
+
+export interface CharacterArc {
+  want: string;
+  need: string;
+  wound: string;
+  secret: string;
+  contradiction: string;
+  openingState: string;
+  closingState: string;
+  voiceNotes: string;
+  recurringProps: string[];
+}
+
+export interface DialogueAnalysis {
+  characterName: string;
+  lineCount: number;
+  wordCount: number;
+  averageWordsPerLine: number;
+  questionCount: number;
+  monologueCount: number;
+  repeatedPhrases: string[];
+  sampleLines: string[];
+}
+
+export interface StoryCheckResult {
+  id: string;
+  category: StoryCheckCategory;
+  severity: StoryCheckSeverity;
+  title: string;
+  message: string;
+  suggestion: string;
+  elementId?: string;
+  sceneNumber?: number;
+}
+
+export interface CollabRoom {
+  id: string;
+  roomUrl: string;
+  provider: 'local' | 'hocuspocus' | 'websocket';
+  permission: 'owner' | 'edit' | 'comment' | 'read';
+  lastSyncedAt?: string;
+}
+
+export interface ExportPackage {
+  id: string;
+  createdAt: string;
+  includePdf: boolean;
+  includeFdx: boolean;
+  includeProject: boolean;
+  includeRevisionMemo: boolean;
+  outputDirectory?: string;
 }
 
 export interface ProjectSettings {
@@ -194,6 +287,7 @@ export interface ProjectSettings {
   showRevisionMarks: boolean;
   showRevisionPageColors: boolean;
   collaborationUrl?: string;
+  collabProvider?: 'local' | 'hocuspocus' | 'websocket';
 }
 
 export interface RecentFileMetadata {
@@ -236,6 +330,11 @@ export interface ScriptDocument {
   revisions: RevisionSet[];
   writingSessions: WritingSession[];
   characters: CharacterProfile[];
+  sceneIntents: SceneIntent[];
+  draftVersions: DraftVersion[];
+  revisionMemos: RevisionMemo[];
+  collabRooms: CollabRoom[];
+  exportPackages: ExportPackage[];
   settings: ProjectSettings;
   fdxShadow?: FdxShadow;
   createdAt: string;

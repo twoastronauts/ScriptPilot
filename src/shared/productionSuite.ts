@@ -63,16 +63,22 @@ export interface ProductionShot {
   sceneId: string;
   sceneNumber: number;
   order: number;
+  shotNumber: string;
   setup: string;
   shotType: ProductionShotType;
   label: string;
   description: string;
   subject: string;
+  cameraAngle: string;
+  cameraMovement: string;
+  cameraEquipment: string;
+  framing: string;
   location: string;
   timeOfDay: string;
   characters: string[];
   tags: ProductionTagSummary[];
   estimatedMinutes: number;
+  setupMinutes: number;
   sourceElementId?: string;
 }
 
@@ -325,83 +331,111 @@ export function generateDefaultShotsFromScenes(scenes: ProductionSceneBreakdown[
     let sceneShotIndex = 1;
 
     for (const scriptedShot of scene.elements.filter((element) => element.type === 'shot' && element.text.trim())) {
+      const setup = shotSetupLabel(scene.sceneNumber, sceneShotIndex);
       shots.push({
         id: `shot:${scene.id}:scripted:${scriptedShot.id}`,
         sceneId: scene.id,
         sceneNumber: scene.sceneNumber,
         order,
-        setup: shotSetupLabel(scene.sceneNumber, sceneShotIndex),
+        shotNumber: setup,
+        setup,
         shotType: 'scripted',
         label: `${scene.sceneNumber} scripted`,
         description: compactText(scriptedShot.text),
         subject: compactText(scriptedShot.text),
+        cameraAngle: 'Director specified',
+        cameraMovement: 'Director specified',
+        cameraEquipment: 'A Camera',
+        framing: 'Project default',
         location: scene.location,
         timeOfDay: scene.timeOfDay,
         characters: scene.characters,
         tags: [],
         estimatedMinutes: 20,
+        setupMinutes: 20,
         sourceElementId: scriptedShot.id
       });
       order += 1;
       sceneShotIndex += 1;
     }
 
+    const masterSetup = shotSetupLabel(scene.sceneNumber, sceneShotIndex);
     shots.push({
       id: `shot:${scene.id}:master`,
       sceneId: scene.id,
       sceneNumber: scene.sceneNumber,
       order,
-      setup: shotSetupLabel(scene.sceneNumber, sceneShotIndex),
+      shotNumber: masterSetup,
+      setup: masterSetup,
       shotType: 'master',
       label: `${scene.sceneNumber} master`,
       description: scene.actionSummary || `Cover ${scene.heading}`,
       subject: scene.location,
+      cameraAngle: 'Eye level',
+      cameraMovement: 'Static or motivated move',
+      cameraEquipment: 'A Camera / tripod',
+      framing: 'Wide master',
       location: scene.location,
       timeOfDay: scene.timeOfDay,
       characters: scene.characters,
       tags: scene.productionTags,
-      estimatedMinutes: 45
+      estimatedMinutes: 45,
+      setupMinutes: 45
     });
     order += 1;
     sceneShotIndex += 1;
 
     for (const character of scene.characters.slice(0, 4)) {
+      const coverageSetup = shotSetupLabel(scene.sceneNumber, sceneShotIndex);
       shots.push({
         id: `shot:${scene.id}:coverage:${slugify(character)}`,
         sceneId: scene.id,
         sceneNumber: scene.sceneNumber,
         order,
-        setup: shotSetupLabel(scene.sceneNumber, sceneShotIndex),
+        shotNumber: coverageSetup,
+        setup: coverageSetup,
         shotType: 'coverage',
         label: `${scene.sceneNumber} ${character}`,
         description: `Coverage for ${character} in ${scene.heading}`,
         subject: character,
+        cameraAngle: 'Eye level',
+        cameraMovement: 'Static / motivated',
+        cameraEquipment: 'A Camera',
+        framing: 'Medium or close-up',
         location: scene.location,
         timeOfDay: scene.timeOfDay,
         characters: [character],
         tags: scene.productionTags.filter((tag) => tag.category === 'wardrobe' || tag.category === 'cast'),
-        estimatedMinutes: 25
+        estimatedMinutes: 25,
+        setupMinutes: 25
       });
       order += 1;
       sceneShotIndex += 1;
     }
 
     for (const tag of scene.productionTags.filter((item) => item.category !== 'cast').slice(0, 3)) {
+      const insertSetup = shotSetupLabel(scene.sceneNumber, sceneShotIndex);
       shots.push({
         id: `shot:${scene.id}:insert:${tag.id}`,
         sceneId: scene.id,
         sceneNumber: scene.sceneNumber,
         order,
-        setup: shotSetupLabel(scene.sceneNumber, sceneShotIndex),
+        shotNumber: insertSetup,
+        setup: insertSetup,
         shotType: 'insert',
         label: `${scene.sceneNumber} ${tag.label}`,
         description: `Insert for ${formatTagLabel(tag)} in ${scene.heading}`,
         subject: tag.label,
+        cameraAngle: 'Detail',
+        cameraMovement: 'Static',
+        cameraEquipment: 'A Camera / macro as needed',
+        framing: 'Insert',
         location: scene.location,
         timeOfDay: scene.timeOfDay,
         characters: [],
         tags: [tag],
-        estimatedMinutes: 15
+        estimatedMinutes: 15,
+        setupMinutes: 15
       });
       order += 1;
       sceneShotIndex += 1;

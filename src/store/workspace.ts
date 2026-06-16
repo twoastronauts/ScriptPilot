@@ -1,10 +1,19 @@
 import { create } from 'zustand';
 import { v4 as uuid } from 'uuid';
-import { createDefaultRevisions, createDefaultSettings, createDefaultTitlePageStyles, createDocumentFromPlainText, createScriptElement } from '@/shared/defaultDocument';
+import {
+  createDefaultCharacterArc,
+  createDefaultRevisions,
+  createDefaultSettings,
+  createDefaultTitlePageStyles,
+  createDocumentFromPlainText,
+  createScriptElement
+} from '@/shared/defaultDocument';
+import { createDraftVersion as buildDraftVersion, createRevisionMemo as buildRevisionMemo } from '@/shared/formattingV2';
 import { estimatePageCount, lineWidthFor, normalizeCharacterName } from '@/shared/screenplay';
 import { computeWritingStats } from '@/shared/stats';
 import type {
   Beat,
+  CharacterArc,
   CharacterProfile,
   ProductionTag,
   ProjectSettings,
@@ -23,7 +32,7 @@ interface SprintBaseline {
   pages: number;
 }
 
-type RightPanel = 'beats' | 'characters' | 'stats' | 'production' | 'studio' | 'shortcuts' | 'settings';
+type RightPanel = 'beats' | 'characters' | 'assistant' | 'stats' | 'production' | 'studio' | 'shortcuts' | 'settings';
 export type BeatBoardMode = 'rail' | 'expanded' | 'fullscreen';
 type WorkspaceView = 'home' | 'editor';
 
@@ -77,6 +86,7 @@ interface WorkspaceState {
   updateStructureRange: (rangeId: string, patch: Partial<StructureRange>) => void;
   addCharacter: () => string;
   updateCharacter: (characterId: string, patch: Partial<CharacterProfile>) => void;
+  updateCharacterArc: (characterId: string, patch: Partial<CharacterArc>) => void;
   renameCharacter: (characterId: string, nextName: string, applyToScript: boolean) => void;
   setSelectedElementType: (type: ScriptElementType) => void;
   addProductionTagToSelected: (tag: Omit<ProductionTag, 'id'>) => void;
@@ -88,6 +98,8 @@ interface WorkspaceState {
   markSelectedRevised: () => void;
   clearSelectedRevision: () => void;
   toggleOmitSelected: () => void;
+  captureDraftVersion: (label?: string, note?: string) => void;
+  createRevisionMemo: () => void;
   startSprint: () => void;
   stopSprint: () => void;
   setWarning: (warning?: string) => void;
@@ -147,15 +159,37 @@ function normalizeDocument(document: ScriptDocument): ScriptDocument {
     titlePage: normalizeTitlePage(document.titlePage, document.title, document.author),
     settings: normalizeSettings(document.settings),
     revisions: normalizeRevisions(document.revisions),
-    beats: document.beats.map((beat) => ({
-      ...beat,
-      width: beat.width ?? 360,
-      height: beat.height ?? 420,
-      textStyle: beat.textStyle ?? 'normal',
-      showBody: beat.showBody ?? true,
-      showImage: beat.showImage ?? true,
-      showAudio: beat.showAudio ?? true
-    }))
+    beats: (document.beats ?? []).map(normalizeBeat),
+    characters: (document.characters ?? []).map(normalizeCharacter),
+    sceneIntents: document.sceneIntents ?? [],
+    draftVersions: document.draftVersions ?? [],
+    revisionMemos: document.revisionMemos ?? [],
+    collabRooms: document.collabRooms ?? [],
+    exportPackages: document.exportPackages ?? []
+  };
+}
+
+function normalizeBeat(beat: Beat): Beat {
+  return {
+    ...beat,
+    width: beat.width ?? 360,
+    height: beat.height ?? 420,
+    textStyle: beat.textStyle ?? 'normal',
+    showBody: beat.showBody ?? true,
+    showImage: beat.showImage ?? true,
+    showAudio: beat.showAudio ?? true,
+    payoffBeatIds: beat.payoffBeatIds ?? [],
+    scriptSyncState: beat.scriptSyncState ?? (beat.linkedElementId ? 'linked' : 'unlinked')
+  };
+}
+
+function normalizeCharacter(character: CharacterProfile): CharacterProfile {
+  return {
+    ...character,
+    aliases: character.aliases ?? [],
+    description: character.description ?? '',
+    demographics: character.demographics ?? '',
+    arc: { ...createDefaultCharacterArc(), ...(character.arc ?? {}) }
   };
 }
 
@@ -520,6 +554,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
             showBody: true,
             showImage: true,
             showAudio: true,
+            act: '',
+            sequence: '',
+            goal: '',
+            conflict: '',
+            payoffBeatIds: [],
+            scriptSyncState: 'unlinked',
             outlineStartPage: undefined,
             outlinePageSpan: 6
           }
@@ -534,7 +574,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       document: touch({
         ...state.document,
         beats: state.document.beats.map((item) =>
-          item.id === beat.id ? { ...beat, outlineStartPage: beat.outlineStartPage && beat.outlineStartPage > 0 ? beat.outlineStartPage : undefined } : item
+          item.id === beat.id
+            ? normalizeBeat({ ...beat, outlineStartPage: beat.outlineStartPage && beat.outlineStartPage > 0 ? beat.outlineStartPage : undefined })
+            : item
         )
       }),
       dirty: true
@@ -586,7 +628,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       document: touch({
         ...state.document,
         elements,
-        beats: state.document.beats.map((item) => (item.id === beatId ? { ...item, linkedElementId: sceneElement.id } : item))
+        beats: state.document.beats.map((item) => (item.id === beatId ? { ...item, linkedElementId: sceneElement.id, scriptSyncState: 'synced' } : item))
       }),
       dirty: true,
       selectedElementId: sceneElement.id
@@ -635,7 +677,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       color: ['#2f6fed', '#c24c3a', '#0f9f83', '#7b4fd6', '#d9a441'][characterCount % 5],
       description: '',
       demographics: '',
-      notes: ''
+      notes: '',
+      arc: createDefaultCharacterArc()
     };
     set({
       document: touch({ ...state.document, characters: [...state.document.characters, character] }),
@@ -647,7 +690,22 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     set((state) => ({
       document: touch({
         ...state.document,
-        characters: state.document.characters.map((character) => (character.id === characterId ? { ...character, ...patch } : character))
+        characters: state.document.characters.map((character) => (character.id === characterId ? normalizeCharacter({ ...character, ...patch }) : character))
+      }),
+      dirty: true
+    })),
+  updateCharacterArc: (characterId, patch) =>
+    set((state) => ({
+      document: touch({
+        ...state.document,
+        characters: state.document.characters.map((character) =>
+          character.id === characterId
+            ? normalizeCharacter({
+                ...character,
+                arc: { ...createDefaultCharacterArc(), ...(character.arc ?? {}), ...patch }
+              })
+            : character
+        )
       }),
       dirty: true
     })),
@@ -818,6 +876,22 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         dirty: true
       };
     }),
+  captureDraftVersion: (label, note) =>
+    set((state) => ({
+      document: touch({
+        ...state.document,
+        draftVersions: [buildDraftVersion(state.document, label, note), ...(state.document.draftVersions ?? [])].slice(0, 50)
+      }),
+      dirty: true
+    })),
+  createRevisionMemo: () =>
+    set((state) => ({
+      document: touch({
+        ...state.document,
+        revisionMemos: [buildRevisionMemo(state.document), ...(state.document.revisionMemos ?? [])].slice(0, 30)
+      }),
+      dirty: true
+    })),
   startSprint: () => {
     const state = get();
     const stats = computeWritingStats(state.document);

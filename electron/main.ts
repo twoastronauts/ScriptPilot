@@ -13,6 +13,11 @@ import type { RecentFile, ScriptDocument } from '../src/shared/types';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development';
+const APP_DISPLAY_NAME = 'Script Pilot V02';
+const PROJECT_EXTENSIONS = ['spx2', 'spx', 'astrostory', 'json'];
+
+app.setName(APP_DISPLAY_NAME);
+app.setPath('userData', path.join(app.getPath('appData'), APP_DISPLAY_NAME));
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -22,7 +27,7 @@ function createMainWindow(): void {
     height: 940,
     minWidth: 1180,
     minHeight: 760,
-    title: 'Script Pilot',
+    title: APP_DISPLAY_NAME,
     backgroundColor: '#f2f0eb',
     autoHideMenuBar: true,
     webPreferences: {
@@ -148,7 +153,7 @@ async function openFilePath(filePath: string): Promise<FileResult<ScriptDocument
   }
 
   const text = await readFile(filePath, 'utf8');
-  const document = ext === '.spx' || ext === '.astrostory' || ext === '.json' ? parseProject(text) : createDocumentFromPlainText(path.basename(filePath, ext), text);
+  const document = ext === '.spx2' || ext === '.spx' || ext === '.astrostory' || ext === '.json' ? parseProject(text) : createDocumentFromPlainText(path.basename(filePath, ext), text);
   await rememberRecentFile(filePath, document, ext === '.txt' ? 'text' : 'project', 'open');
   return { canceled: false, path: filePath, data: document };
 }
@@ -156,7 +161,7 @@ async function openFilePath(filePath: string): Promise<FileResult<ScriptDocument
 ipcMain.handle('file:open-project', async (): Promise<FileResult<ScriptDocument>> => {
   const result = await dialog.showOpenDialog({
     title: 'Open Script Pilot project',
-    filters: [{ name: 'Script Pilot Project', extensions: ['spx', 'astrostory', 'json'] }],
+    filters: [{ name: 'Script Pilot Project', extensions: PROJECT_EXTENSIONS }],
     properties: ['openFile']
   });
   if (result.canceled || !result.filePaths[0]) return canceled(createDocumentFromPlainText('Untitled', ''));
@@ -172,9 +177,12 @@ ipcMain.handle('file:save-project', async (_event, document: ScriptDocument, exi
   let filePath = existingPath;
   if (!filePath) {
     const result = await dialog.showSaveDialog({
-      title: 'Save Script Pilot project',
-      defaultPath: `${document.title || 'Untitled'}.spx`,
-      filters: [{ name: 'Script Pilot Project', extensions: ['spx'] }]
+      title: 'Save Script Pilot V02 project',
+      defaultPath: `${document.title || 'Untitled'}.spx2`,
+      filters: [
+        { name: 'Script Pilot V02 Project', extensions: ['spx2'] },
+        { name: 'Script Pilot V01 Project', extensions: ['spx'] }
+      ]
     });
     if (result.canceled || !result.filePath) return canceled(document);
     filePath = result.filePath;
@@ -302,7 +310,7 @@ ipcMain.handle('file:create-backup', async (_event, document: ScriptDocument, cu
   const dir = await ensureBackupsDir();
   const baseName = currentPath ? path.basename(currentPath, path.extname(currentPath)) : document.title || 'Untitled';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const backupPath = path.join(dir, `${baseName}.${stamp}.spx`);
+  const backupPath = path.join(dir, `${baseName}.${stamp}.spx2`);
   await writeFile(backupPath, serializeProject(document), 'utf8');
   return { canceled: false, path: backupPath, data: null };
 });
@@ -312,7 +320,7 @@ ipcMain.handle('file:restore-backup', async (): Promise<FileResult<ScriptDocumen
   const result = await dialog.showOpenDialog({
     title: 'Restore backup',
     defaultPath: existsSync(dir) ? dir : app.getPath('documents'),
-    filters: [{ name: 'Script Pilot Project', extensions: ['spx', 'astrostory', 'json'] }],
+    filters: [{ name: 'Script Pilot Project', extensions: PROJECT_EXTENSIONS }],
     properties: ['openFile']
   });
   if (result.canceled || !result.filePaths[0]) return canceled(createDocumentFromPlainText('Untitled', ''));

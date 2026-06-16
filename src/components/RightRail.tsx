@@ -1,6 +1,7 @@
-import { BarChart3, Boxes, Clapperboard, GitBranch, Keyboard, PanelRightClose, PanelRightOpen, Settings, StickyNote, Users } from 'lucide-react';
+import { BarChart3, Boxes, Clapperboard, GitBranch, Keyboard, PanelRightClose, PanelRightOpen, Settings, Sparkles, StickyNote, Users } from 'lucide-react';
 import { BeatBoard } from './panels/BeatBoard';
 import { CharactersPanel } from './panels/CharactersPanel';
+import { WriterAssistantPanel } from './panels/WriterAssistantPanel';
 import { StatsPanel } from './panels/StatsPanel';
 import { ProductionPanel } from './panels/ProductionPanel';
 import { StudioPanel } from './panels/StudioPanel';
@@ -11,6 +12,7 @@ import { useWorkspace } from '@/store/workspace';
 const tabs = [
   { id: 'beats', label: 'Beats', icon: Boxes },
   { id: 'characters', label: 'Characters', icon: Users },
+  { id: 'assistant', label: 'Assistant', icon: Sparkles },
   { id: 'stats', label: 'Stats', icon: BarChart3 },
   { id: 'production', label: 'Notes/Tags', icon: StickyNote },
   { id: 'studio', label: 'Shot List', icon: Clapperboard },
@@ -47,6 +49,7 @@ export function RightRail() {
       <div className="rail-panel">
         {activeRightPanel === 'beats' && <BeatBoard />}
         {activeRightPanel === 'characters' && <CharactersPanel />}
+        {activeRightPanel === 'assistant' && <WriterAssistantPanel />}
         {activeRightPanel === 'stats' && <StatsPanel />}
         {activeRightPanel === 'production' && <ProductionPanel />}
         {activeRightPanel === 'studio' && <StudioPanel />}

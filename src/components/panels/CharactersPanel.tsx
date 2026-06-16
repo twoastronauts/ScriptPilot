@@ -1,4 +1,6 @@
 import { computeWritingStats } from '@/shared/stats';
+import { analyzeDialogue } from '@/shared/dialogueStudio';
+import { createDefaultCharacterArc } from '@/shared/defaultDocument';
 import { useWorkspace } from '@/store/workspace';
 import type * as React from 'react';
 import { Plus } from 'lucide-react';
@@ -6,11 +8,12 @@ import { useMemo, useState } from 'react';
 import type { CharacterProfile } from '@/shared/types';
 
 export function CharactersPanel() {
-  const { document, addCharacter, updateCharacter, renameCharacter } = useWorkspace();
+  const { document, addCharacter, updateCharacter, updateCharacterArc, renameCharacter } = useWorkspace();
   const [pendingRename, setPendingRename] = useState<{ id: string; from: string; to: string } | null>(null);
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const stats = computeWritingStats(document);
   const statsByName = useMemo(() => new Map(stats.characters.map((character) => [character.name, character])), [stats.characters]);
+  const dialogueByName = useMemo(() => new Map(analyzeDialogue(document).map((analysis) => [analysis.characterName, analysis])), [document]);
   const profiles = useMemo(() => mergeCharacterProfiles(document.characters, stats.characters.map((character) => character.name)), [document.characters, stats.characters]);
 
   return (
@@ -24,6 +27,8 @@ export function CharactersPanel() {
       <div className="character-panel-list">
         {profiles.map((profile) => {
           const characterStats = statsByName.get(profile.name);
+          const dialogue = dialogueByName.get(profile.name);
+          const arc = { ...createDefaultCharacterArc(), ...(profile.arc ?? {}) };
           return (
           <div key={profile.id} className="character-card character-card--editable">
             <i style={{ '--character-color': profile.color ?? '#55b8c7' } as React.CSSProperties} />
@@ -43,6 +48,7 @@ export function CharactersPanel() {
             <input aria-label="Character color" type="color" value={profile.color} onChange={(event) => updateCharacter(profile.id, { color: event.target.value })} />
             <span>{characterStats?.scenes ?? 0} scenes</span>
             <small>{characterStats?.interactions.length ? `With ${characterStats.interactions.join(', ')}` : 'No interactions yet'}</small>
+            <small>{dialogue ? `${dialogue.wordCount} dialogue words / ${dialogue.averageWordsPerLine} avg` : 'No dialogue analysis yet'}</small>
             <textarea
               aria-label="Character demographics"
               placeholder="Demographics / identity notes entered by the writer"
@@ -54,6 +60,18 @@ export function CharactersPanel() {
               placeholder="Description, voice, wants, contradictions"
               value={profile.description ?? profile.notes ?? ''}
               onChange={(event) => updateCharacter(profile.id, { description: event.target.value, notes: event.target.value })}
+            />
+            <div className="character-arc-grid">
+              <input aria-label="Character want" placeholder="Want" value={arc.want} onChange={(event) => updateCharacterArc(profile.id, { want: event.target.value })} />
+              <input aria-label="Character need" placeholder="Need" value={arc.need} onChange={(event) => updateCharacterArc(profile.id, { need: event.target.value })} />
+              <input aria-label="Character wound" placeholder="Wound" value={arc.wound} onChange={(event) => updateCharacterArc(profile.id, { wound: event.target.value })} />
+              <input aria-label="Character secret" placeholder="Secret" value={arc.secret} onChange={(event) => updateCharacterArc(profile.id, { secret: event.target.value })} />
+            </div>
+            <textarea
+              aria-label="Character voice notes"
+              placeholder="Voice notes, contradictions, repeated language, actor clues"
+              value={arc.voiceNotes}
+              onChange={(event) => updateCharacterArc(profile.id, { voiceNotes: event.target.value })}
             />
           </div>
           );
@@ -107,7 +125,8 @@ function mergeCharacterProfiles(profiles: CharacterProfile[], scriptNames: strin
       aliases: [],
       color: ['#2f6fed', '#c24c3a', '#0f9f83', '#7b4fd6'][index % 4],
       description: '',
-      demographics: ''
+      demographics: '',
+      arc: createDefaultCharacterArc()
     }));
   return [...profiles, ...derived];
 }
