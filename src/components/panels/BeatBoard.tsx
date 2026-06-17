@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type * as React from 'react';
-import { Crosshair, Image as ImageIcon, Maximize2, Mic, Minimize2, PanelRightClose, PanelRightOpen, Plus, Send, Square, Volume2, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { Crosshair, Image as ImageIcon, Maximize2, Mic, Minimize2, PanelRightClose, PanelRightOpen, Plus, Send, Square, Trash2, Volume2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useWorkspace } from '@/store/workspace';
 import type { Beat } from '@/shared/types';
 
@@ -45,7 +45,7 @@ interface ConnectionState {
 }
 
 export function BeatBoard() {
-  const { document, addBeatAt, updateBeat, linkBeats, unlinkBeatSide, sendBeatToScript, beatBoardMode, setBeatBoardMode, setWarning } = useWorkspace();
+  const { document, addBeatAt, updateBeat, deleteBeat, linkBeats, unlinkBeatSide, sendBeatToScript, beatBoardMode, setBeatBoardMode, setWarning } = useWorkspace();
   const boardRef = useRef<HTMLDivElement | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -287,6 +287,17 @@ export function BeatBoard() {
     sendBeatToScript(beat.id);
   }
 
+  function deleteBeatNode(beat: Beat) {
+    const title = beat.title.trim() || 'Untitled beat';
+    const confirmed = window.confirm(`Delete "${title}" from the beat board and outline?`);
+    if (!confirmed) return;
+    if (recordingBeatId === beat.id) stopAudioRecording();
+    setDragState(null);
+    setResizeState(null);
+    setConnectionState((current) => (current?.fromId === beat.id ? null : current));
+    deleteBeat(beat.id);
+  }
+
   function startConnection(event: React.PointerEvent<HTMLButtonElement>, beat: Beat, side: 'left' | 'right') {
     event.preventDefault();
     event.stopPropagation();
@@ -477,6 +488,9 @@ export function BeatBoard() {
                         onClick={() => sendBeat(beat)}
                       >
                         <Send size={14} />
+                      </button>
+                      <button className="beat-node__delete" title="Delete beat node" aria-label={`Delete beat node ${beat.title || 'Untitled beat'}`} onClick={() => deleteBeatNode(beat)}>
+                        <Trash2 size={14} />
                       </button>
                     </div>
                     {(beat.showBody ?? true) && (

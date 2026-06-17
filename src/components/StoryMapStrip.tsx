@@ -1,5 +1,5 @@
-import { Boxes, Film, Flag } from 'lucide-react';
-import { useMemo } from 'react';
+import { Boxes, Film, Flag, Trash2, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
 import { estimatePageCount, lineWidthFor } from '@/shared/screenplay';
 import type { Beat, ScriptDocument, ScriptElement } from '@/shared/types';
@@ -18,14 +18,41 @@ interface SceneEntry {
 
 interface MapRange {
   id: string;
+  sourceRangeId?: string;
   label: string;
   color: string;
+  summary?: string;
   startPage: number;
   endPage: number;
 }
 
+interface ActEditorState {
+  rangeId?: string;
+  leftPct: number;
+  label: string;
+  startPage: number;
+  endPage: number;
+  color: string;
+  summary: string;
+}
+
+const STRUCTURE_COLORS = ['#91c8b7', '#6ca8e7', '#a88adf', '#d9a441', '#9f3f45', '#55b8c7', '#b95f89'];
+
 export function OutlineEditorStrip() {
-  const { document, outlineHeight, selectedElementId, setSelectedElement, setPanel, addBeatAt, updateBeat, addStructureRangeAtPage } = useWorkspace();
+  const {
+    document,
+    outlineHeight,
+    selectedElementId,
+    setSelectedElement,
+    setPanel,
+    addBeatAt,
+    updateBeat,
+    deleteBeat,
+    addStructureRangeAtPage,
+    updateStructureRange,
+    deleteStructureRange
+  } = useWorkspace();
+  const [actEditor, setActEditor] = useState<ActEditorState>();
 
   const pageMap = useMemo(() => buildPageMap(document.elements), [document.elements]);
   const scenes = useMemo(() => buildSceneEntries(document.elements, pageMap), [document.elements, pageMap]);
@@ -35,6 +62,167 @@ export function OutlineEditorStrip() {
   const beatRanges = useMemo(() => buildBeatRanges(document.beats, pageMap, pageCount), [document.beats, pageMap, pageCount]);
   const expanded = outlineHeight >= EXPANDED_SUMMARY_HEIGHT;
   const selectedPage = selectedElementId ? pageMap.get(selectedElementId) ?? 1 : 1;
+
+  useEffect(() => {
+    if (!actEditor) return undefined;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActEditor(undefined);
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [actEditor]);
+
+  const openActEditor = (range: MapRange, event?: React.SyntheticEvent<HTMLElement>) => {
+    event?.stopPropagation();
+    const existing = range.sourceRangeId ? document.structureRanges.find((item) => item.id === range.sourceRangeId) : undefined;
+    setActEditor({
+      rangeId: existing?.id,
+      leftPct: leftForPage(range.startPage, pageCount),
+      label: range.label,
+      startPage: range.startPage,
+      endPage: range.endPage,
+      color: range.color,
+      summary: range.summary ?? ''
+    });
+  };
+
+  const openNewActEditor = (event: React.MouseEvent<HTMLElement>) => {
+    const page = pageFromLaneEvent(event, pageCount);
+    const existingActCount = document.structureRanges.filter((range) => range.kind === 'act').length;
+    const defaultSpan = defaultActSpan(pageCount, existingActCount + 1);
+    setActEditor({
+      leftPct: leftForPage(page, pageCount),
+      label: `ACT ${existingActCount + 1}`,
+      startPage: page,
+      endPage: Math.min(pageCount, page + defaultSpan - 1),
+      color: STRUCTURE_COLORS[existingActCount % STRUCTURE_COLORS.length],
+      summary: ''
+    });
+  };
+
+  const saveActEditor = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!actEditor) return;
+
+    const startPage = clampPage(actEditor.startPage, pageCount);
+    const endPage = Math.max(startPage, clampPage(actEditor.endPage, pageCount));
+    const startElementId = elementIdForOutlinePage(document.elements, pageMap, startPage, 'start');
+    const endElementId = elementIdForOutlinePage(document.elements, pageMap, endPage, 'end') ?? startElementId;
+    if (!startElementId || !endElementId) return;
+
+    const patch = {
+      label: actEditor.label.trim() || 'ACT',
+      color: actEditor.color,
+      summary: actEditor.summary.trim(),
+      startPage,
+      endPage,
+      startElementId,
+      endElementId,
+      visible: true
+    };
+
+    if (actEditor.rangeId) {
+      updateStructureRange(actEditor.rangeId, patch);
+    } else {
+      const id = addStructureRangeAtPage(startPage, 'act');
+      updateStructureRange(id, patch);
+    }
+
+    setActEditor(undefined);
+  };
+
+  const applyActRangePages = (rangeId: string, startPage: number, endPage: number) => {
+    const nextStartPage = clampPage(startPage, pageCount);
+    const nextEndPage = Math.max(nextStartPage, clampPage(endPage, pageCount));
+    const startElementId = elementIdForOutlinePage(document.elements, pageMap, nextStartPage, 'start');
+    const endElementId = elementIdForOutlinePage(document.elements, pageMap, nextEndPage, 'end') ?? startElementId;
+    if (!startElementId || !endElementId) return;
+
+    updateStructureRange(rangeId, {
+      startPage: nextStartPage,
+      endPage: nextEndPage,
+      startElementId,
+      endElementId
+    });
+
+    setActEditor((current) =>
+      current?.rangeId === rangeId
+        ? {
+            ...current,
+            leftPct: leftForPage(nextStartPage, pageCount),
+            startPage: nextStartPage,
+            endPage: nextEndPage
+          }
+        : current
+    );
+  };
+
+  const startActResize = (range: MapRange, edge: 'start' | 'end', event: React.PointerEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!range.sourceRangeId) {
+      openActEditor(range, event);
+      return;
+    }
+
+    const lane = event.currentTarget.closest('.outline-lane-strip');
+    if (!(lane instanceof HTMLElement)) return;
+
+    let nextStartPage = range.startPage;
+    let nextEndPage = range.endPage;
+    let lastApplied = `${nextStartPage}:${nextEndPage}`;
+    const previousCursor = window.document.body.style.cursor;
+    const previousUserSelect = window.document.body.style.userSelect;
+    window.document.body.style.cursor = 'ew-resize';
+    window.document.body.style.userSelect = 'none';
+
+    const updateFromClientX = (clientX: number) => {
+      const page = pageFromClientX(clientX, lane, pageCount);
+      if (edge === 'start') {
+        nextStartPage = Math.min(page, nextEndPage);
+      } else {
+        nextEndPage = Math.max(page, nextStartPage);
+      }
+
+      const key = `${nextStartPage}:${nextEndPage}`;
+      if (key === lastApplied) return;
+      lastApplied = key;
+      applyActRangePages(range.sourceRangeId!, nextStartPage, nextEndPage);
+    };
+
+    const move = (pointerEvent: PointerEvent) => {
+      pointerEvent.preventDefault();
+      updateFromClientX(pointerEvent.clientX);
+    };
+
+    const stop = (pointerEvent: PointerEvent) => {
+      updateFromClientX(pointerEvent.clientX);
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', stop);
+      window.document.body.style.cursor = previousCursor;
+      window.document.body.style.userSelect = previousUserSelect;
+    };
+
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', stop, { once: true });
+  };
+
+  const removeAct = () => {
+    if (!actEditor?.rangeId) return;
+    deleteStructureRange(actEditor.rangeId);
+    setActEditor(undefined);
+  };
+
+  const deleteBeatFromOutline = (beatId: string, event: React.MouseEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const beat = document.beats.find((item) => item.id === beatId);
+    const title = beat?.title.trim() || 'Untitled beat';
+    if (!window.confirm(`Delete "${title}" from the beat board and outline?`)) return;
+    deleteBeat(beatId);
+  };
 
   return (
     <section className={expanded ? 'outline-editor-strip is-expanded' : 'outline-editor-strip'} aria-label="Outline editor">
@@ -54,21 +242,49 @@ export function OutlineEditorStrip() {
           <small>{pageCount} dynamic pages</small>
         </div>
 
-        <div className="outline-lane-strip outline-lane-strip--acts" onDoubleClick={(event) => addActFromLane(event, pageCount, addStructureRangeAtPage)}>
+        <div className="outline-lane-strip outline-lane-strip--acts" onDoubleClick={openNewActEditor}>
           {actRanges.map((range) => (
             <button
               key={range.id}
               className="outline-beat outline-beat--act"
               style={rangeStyle(range.startPage, range.endPage, pageCount, range.color)}
               title={`${range.label}: pages ${range.startPage}-${range.endPage}`}
-              onDoubleClick={(event) => {
-                event.stopPropagation();
-                const targetRange = document.structureRanges.find((item) => item.id === range.id);
+              onClick={() => {
+                const targetRange = range.sourceRangeId ? document.structureRanges.find((item) => item.id === range.sourceRangeId) : undefined;
                 if (targetRange) setSelectedElement(targetRange.startElementId);
               }}
+              onDoubleClick={(event) => {
+                openActEditor(range, event);
+              }}
             >
+              {range.sourceRangeId && (
+                <span
+                  className="outline-range-handle outline-range-handle--start"
+                  role="separator"
+                  aria-label={`Resize start of ${range.label}`}
+                  onPointerDown={(event) => startActResize(range, 'start', event)}
+                  onClick={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                />
+              )}
               <Flag size={12} />
-              <span>{range.label}</span>
+              <span className="outline-marker-label">{range.label}</span>
+              <small className="outline-range-pages">pg. {range.startPage}-{range.endPage}</small>
+              {range.sourceRangeId && (
+                <span
+                  className="outline-range-handle outline-range-handle--end"
+                  role="separator"
+                  aria-label={`Resize end of ${range.label}`}
+                  onPointerDown={(event) => startActResize(range, 'end', event)}
+                  onClick={(event) => event.stopPropagation()}
+                  onDoubleClick={(event) => event.stopPropagation()}
+                />
+              )}
+              <MarkerPreview
+                title={range.label}
+                meta={`Pages ${range.startPage}-${range.endPage}`}
+                body={range.summary || (range.sourceRangeId ? 'Double-click to define this act.' : 'Suggested marker. Double-click to create your own act.')}
+              />
             </button>
           ))}
         </div>
@@ -92,7 +308,21 @@ export function OutlineEditorStrip() {
               }}
             >
               <Boxes size={12} />
-              <span>{range.label}</span>
+              <span className="outline-marker-label">{range.label}</span>
+              <span
+                className="outline-marker-delete"
+                role="button"
+                tabIndex={0}
+                aria-label={`Delete beat ${range.label}`}
+                title="Delete beat"
+                onClick={(event) => deleteBeatFromOutline(range.id, event)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') deleteBeatFromOutline(range.id, event);
+                }}
+              >
+                <Trash2 size={10} />
+              </span>
+              <MarkerPreview title={range.label} meta={`Pages ${range.startPage}-${range.endPage}`} body={range.summary || 'Double-click to open this beat on the board.'} />
             </button>
           ))}
         </div>
@@ -111,7 +341,8 @@ export function OutlineEditorStrip() {
               }}
             >
               <Film size={12} />
-              <span>{scene.element.text || `Scene ${scene.index + 1}`}</span>
+              <span className="outline-marker-label">{scene.element.text || `Scene ${scene.index + 1}`}</span>
+              <MarkerPreview title={scene.element.text || `Scene ${scene.index + 1}`} meta={`Page ${scene.page}`} body={scene.summary || 'No scene summary yet.'} />
             </button>
           ))}
         </div>
@@ -145,7 +376,96 @@ export function OutlineEditorStrip() {
           ))}
         </div>
       </div>
+
+      {actEditor && (
+        <form className="outline-act-popover" style={{ '--act-popover-left': `${actEditor.leftPct}%` } as React.CSSProperties} onSubmit={saveActEditor}>
+          <div className="outline-act-popover__header">
+            <strong>{actEditor.rangeId ? 'Edit act' : 'New act'}</strong>
+            <button type="button" className="icon-button" aria-label="Close act editor" onClick={() => setActEditor(undefined)}>
+              <X size={14} />
+            </button>
+          </div>
+
+          <label>
+            <span>Title</span>
+            <input autoFocus value={actEditor.label} onChange={(event) => setActEditor((current) => (current ? { ...current, label: event.target.value } : current))} />
+          </label>
+
+          <div className="outline-act-popover__grid">
+            <label>
+              <span>Start pg.</span>
+              <input
+                type="number"
+                min={1}
+                max={pageCount}
+                value={actEditor.startPage}
+                onChange={(event) => setActEditor((current) => (current ? { ...current, startPage: Number(event.target.value) || 1 } : current))}
+              />
+            </label>
+            <label>
+              <span>End pg.</span>
+              <input
+                type="number"
+                min={1}
+                max={pageCount}
+                value={actEditor.endPage}
+                onChange={(event) => setActEditor((current) => (current ? { ...current, endPage: Number(event.target.value) || current.startPage } : current))}
+              />
+            </label>
+            <label>
+              <span>Color</span>
+              <input type="color" value={actEditor.color} onChange={(event) => setActEditor((current) => (current ? { ...current, color: event.target.value } : current))} />
+            </label>
+          </div>
+
+          <div className="outline-act-popover__swatches" aria-label="Act colors">
+            {STRUCTURE_COLORS.map((color) => (
+              <button
+                key={color}
+                type="button"
+                className={color.toLowerCase() === actEditor.color.toLowerCase() ? 'is-active' : ''}
+                style={{ '--swatch-color': color } as React.CSSProperties}
+                aria-label={`Use act color ${color}`}
+                onClick={() => setActEditor((current) => (current ? { ...current, color } : current))}
+              />
+            ))}
+          </div>
+
+          <label>
+            <span>Purpose</span>
+            <textarea
+              rows={3}
+              placeholder="Central turn, pressure, promise, reversal..."
+              value={actEditor.summary}
+              onChange={(event) => setActEditor((current) => (current ? { ...current, summary: event.target.value } : current))}
+            />
+          </label>
+
+          <div className="outline-act-popover__actions">
+            {actEditor.rangeId && (
+              <button type="button" className="ghost-button danger" onClick={removeAct}>
+                <Trash2 size={13} />
+                Remove
+              </button>
+            )}
+            <button type="button" className="ghost-button" onClick={() => setActEditor(undefined)}>
+              Cancel
+            </button>
+            <button type="submit">{actEditor.rangeId ? 'Update act' : 'Create act'}</button>
+          </div>
+        </form>
+      )}
     </section>
+  );
+}
+
+function MarkerPreview({ title, meta, body }: { title: string; meta: string; body: string }) {
+  return (
+    <span className="outline-marker-preview" aria-hidden="true">
+      <span>{title}</span>
+      <small>{meta}</small>
+      <em>{body}</em>
+    </span>
   );
 }
 
@@ -187,33 +507,40 @@ function resolvePageCount(document: ScriptDocument, pageMap: Map<string, number>
     const start = beatStartPage(beat, pageMap);
     return Math.max(max, start + Math.max(1, beat.outlinePageSpan ?? 6) - 1);
   }, 1);
+  const actMax = document.structureRanges.reduce((max, range) => {
+    if (!range.visible || range.kind !== 'act') return max;
+    return Math.max(max, range.endPage ?? pageMap.get(range.endElementId) ?? 1);
+  }, 1);
 
-  return Math.max(1, scriptPages, sceneMax, beatMax);
+  return Math.max(1, scriptPages, sceneMax, beatMax, actMax);
 }
 
 function buildActRanges(document: ScriptDocument, pageMap: Map<string, number>, pageCount: number): MapRange[] {
   const ranges = document.structureRanges
     .filter((range) => range.visible && range.kind === 'act')
     .map((range) => {
-      const startPage = pageMap.get(range.startElementId) ?? 1;
-      const endPage = pageMap.get(range.endElementId) ?? pageCount;
+      const startPage = range.startPage ?? pageMap.get(range.startElementId) ?? 1;
+      const endPage = range.endPage ?? pageMap.get(range.endElementId) ?? pageCount;
       return {
         id: range.id,
+        sourceRangeId: range.id,
         label: range.label || 'Act',
         color: range.color,
+        summary: range.summary,
         startPage,
         endPage: Math.max(startPage, endPage)
       };
-    });
+    })
+    .sort((first, second) => first.startPage - second.startPage);
 
   if (ranges.length) return ranges;
 
   const actOneEnd = Math.max(1, Math.round(pageCount * 0.25));
   const actTwoEnd = Math.max(actOneEnd + 1, Math.round(pageCount * 0.75));
   return [
-    { id: 'act-one', label: 'ACT ONE', color: '#91c8b7', startPage: 1, endPage: actOneEnd },
-    { id: 'act-two', label: 'ACT TWO', color: '#6ca8e7', startPage: actOneEnd + 1, endPage: actTwoEnd },
-    { id: 'act-three', label: 'ACT THREE', color: '#8ea0cc', startPage: actTwoEnd + 1, endPage: pageCount }
+    { id: 'act-one', label: 'ACT ONE', color: '#91c8b7', summary: 'Suggested first-act setup range.', startPage: 1, endPage: actOneEnd },
+    { id: 'act-two', label: 'ACT TWO', color: '#6ca8e7', summary: 'Suggested second-act escalation range.', startPage: actOneEnd + 1, endPage: actTwoEnd },
+    { id: 'act-three', label: 'ACT THREE', color: '#8ea0cc', summary: 'Suggested final-act resolution range.', startPage: actTwoEnd + 1, endPage: pageCount }
   ];
 }
 
@@ -226,6 +553,7 @@ function buildBeatRanges(beats: Beat[], pageMap: Map<string, number>, pageCount:
         id: beat.id,
         label: beat.title || 'Untitled beat',
         color: beat.color,
+        summary: beat.body,
         startPage,
         endPage: Math.min(pageCount, startPage + Math.max(1, beat.outlinePageSpan ?? 6) - 1)
       };
@@ -285,10 +613,28 @@ function widthForPages(startPage: number, endPage: number, pageCount: number): n
   return Math.max(2.8, Math.min(100, (span / Math.max(1, pageCount)) * 100));
 }
 
-function addActFromLane(event: React.MouseEvent<HTMLDivElement>, pageCount: number, addStructureRangeAtPage: (page: number, kind?: 'act' | 'sequence' | 'scene' | 'custom') => string): void {
-  if (event.target !== event.currentTarget) return;
-  const page = pageFromLaneEvent(event, pageCount);
-  addStructureRangeAtPage(page, 'act');
+function defaultActSpan(pageCount: number, actNumber: number): number {
+  if (pageCount <= 12) return Math.max(1, Math.ceil(pageCount / Math.max(3, actNumber)));
+  return Math.max(4, Math.round(pageCount / Math.max(3, actNumber + 1)));
+}
+
+function clampPage(page: number, pageCount: number): number {
+  return Math.max(1, Math.min(pageCount, Math.round(page)));
+}
+
+function elementIdForOutlinePage(elements: ScriptElement[], pageMap: Map<string, number>, page: number, mode: 'start' | 'end'): string | undefined {
+  if (!elements.length) return undefined;
+  const entries = elements.map((element) => ({ element, page: pageMap.get(element.id) ?? 1 }));
+
+  if (mode === 'start') {
+    return entries.find((entry) => entry.page >= page)?.element.id ?? entries[entries.length - 1]?.element.id;
+  }
+
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    if (entries[index].page <= page) return entries[index].element.id;
+  }
+
+  return entries[0]?.element.id;
 }
 
 function addBeatFromLane(
@@ -317,5 +663,11 @@ function addBeatFromLane(
 function pageFromLaneEvent(event: React.MouseEvent<HTMLElement>, pageCount: number): number {
   const rect = event.currentTarget.getBoundingClientRect();
   const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width)));
+  return Math.max(1, Math.min(pageCount, Math.round(ratio * pageCount) + 1));
+}
+
+function pageFromClientX(clientX: number, lane: HTMLElement, pageCount: number): number {
+  const rect = lane.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
   return Math.max(1, Math.min(pageCount, Math.round(ratio * pageCount) + 1));
 }

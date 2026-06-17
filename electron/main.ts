@@ -14,7 +14,7 @@ import type { RecentFile, ScriptDocument } from '../src/shared/types';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development';
 const APP_DISPLAY_NAME = 'Script Pilot V02';
-const PROJECT_EXTENSIONS = ['spx2', 'spx', 'astrostory', 'json'];
+const PROJECT_EXTENSIONS = ['spx', 'spx2', 'astrostory', 'json'];
 
 app.setName(APP_DISPLAY_NAME);
 app.setPath('userData', path.join(app.getPath('appData'), APP_DISPLAY_NAME));
@@ -178,11 +178,8 @@ ipcMain.handle('file:save-project', async (_event, document: ScriptDocument, exi
   if (!filePath) {
     const result = await dialog.showSaveDialog({
       title: 'Save Script Pilot V02 project',
-      defaultPath: `${document.title || 'Untitled'}.spx2`,
-      filters: [
-        { name: 'Script Pilot V02 Project', extensions: ['spx2'] },
-        { name: 'Script Pilot V01 Project', extensions: ['spx'] }
-      ]
+      defaultPath: `${document.title || 'Untitled'}.spx`,
+      filters: [{ name: 'Script Pilot Project', extensions: ['spx'] }]
     });
     if (result.canceled || !result.filePath) return canceled(document);
     filePath = result.filePath;
@@ -310,7 +307,7 @@ ipcMain.handle('file:create-backup', async (_event, document: ScriptDocument, cu
   const dir = await ensureBackupsDir();
   const baseName = currentPath ? path.basename(currentPath, path.extname(currentPath)) : document.title || 'Untitled';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const backupPath = path.join(dir, `${baseName}.${stamp}.spx2`);
+  const backupPath = path.join(dir, `${baseName}.${stamp}.spx`);
   await writeFile(backupPath, serializeProject(document), 'utf8');
   return { canceled: false, path: backupPath, data: null };
 });

@@ -89,9 +89,9 @@
     },
     "fileAssociations": [
       {
-        "ext": "spx2",
-        "name": "Script Pilot V02 Project",
-        "description": "Script Pilot V02 project file",
+        "ext": "spx",
+        "name": "Script Pilot Project",
+        "description": "Script Pilot project file",
         "icon": "src/assets/script-pilot-icon",
         "role": "Editor"
       }

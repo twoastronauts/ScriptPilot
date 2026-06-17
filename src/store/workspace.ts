@@ -79,11 +79,13 @@ interface WorkspaceState {
   addBeat: () => string;
   addBeatAt: (point?: { x: number; y: number }) => string;
   updateBeat: (beat: Beat) => void;
+  deleteBeat: (beatId: string) => void;
   linkBeats: (fromBeatId: string, toBeatId: string) => void;
   unlinkBeatSide: (beatId: string, side: 'left' | 'right') => void;
   sendBeatToScript: (beatId: string) => void;
   addStructureRangeAtPage: (page: number, kind?: StructureRange['kind']) => string;
   updateStructureRange: (rangeId: string, patch: Partial<StructureRange>) => void;
+  deleteStructureRange: (rangeId: string) => void;
   addCharacter: () => string;
   updateCharacter: (characterId: string, patch: Partial<CharacterProfile>) => void;
   updateCharacterArc: (characterId: string, patch: Partial<CharacterArc>) => void;
@@ -581,6 +583,26 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       }),
       dirty: true
     })),
+  deleteBeat: (beatId) =>
+    set((state) => {
+      const nextBeats = state.document.beats
+        .filter((beat) => beat.id !== beatId)
+        .map((beat) =>
+          normalizeBeat({
+            ...beat,
+            parentId: beat.parentId === beatId ? undefined : beat.parentId,
+            payoffBeatIds: beat.payoffBeatIds?.filter((id) => id !== beatId)
+          })
+        );
+
+      return {
+        document: touch({
+          ...state.document,
+          beats: nextBeats
+        }),
+        dirty: true
+      };
+    }),
   linkBeats: (fromBeatId, toBeatId) =>
     set((state) => {
       if (fromBeatId === toBeatId) return state;
@@ -646,6 +668,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       id,
       label: kind === 'act' ? `ACT ${sameKindCount + 1}` : `${kind.toUpperCase()} ${sameKindCount + 1}`,
       color: ['#91c8b7', '#6ca8e7', '#a88adf', '#d9a441', '#9f3f45'][sameKindCount % 5],
+      startPage: targetPage,
+      endPage: Math.min(pageCount, targetPage + 24),
       startElementId,
       endElementId,
       kind,
@@ -663,6 +687,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       document: touch({
         ...state.document,
         structureRanges: state.document.structureRanges.map((range) => (range.id === rangeId ? { ...range, ...patch } : range))
+      }),
+      dirty: true
+    })),
+  deleteStructureRange: (rangeId) =>
+    set((state) => ({
+      document: touch({
+        ...state.document,
+        structureRanges: state.document.structureRanges.filter((range) => range.id !== rangeId)
       }),
       dirty: true
     })),

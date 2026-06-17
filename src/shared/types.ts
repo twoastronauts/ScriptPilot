@@ -132,6 +132,9 @@ export interface StructureRange {
   id: string;
   label: string;
   color: string;
+  summary?: string;
+  startPage?: number;
+  endPage?: number;
   startElementId: string;
   endElementId: string;
   kind: 'act' | 'sequence' | 'scene' | 'custom';

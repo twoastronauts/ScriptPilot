@@ -67,4 +67,22 @@ describe('beat board workspace behavior', () => {
     useWorkspace.getState().unlinkBeatSide(first, 'right');
     expect(useWorkspace.getState().document.beats.find((beat) => beat.id === second)?.parentId).toBeUndefined();
   });
+
+  it('deletes beat nodes and cleans up links', () => {
+    useWorkspace.getState().setDocument(createDocumentFromPlainText('Beat Board', 'INT. ROOM - DAY'));
+    const parent = useWorkspace.getState().addBeatAt({ x: 200, y: 220 });
+    const child = useWorkspace.getState().addBeatAt({ x: 620, y: 220 });
+    const payoff = useWorkspace.getState().addBeatAt({ x: 980, y: 220 });
+
+    useWorkspace.getState().linkBeats(parent, child);
+    const parentBeat = useWorkspace.getState().document.beats.find((beat) => beat.id === parent);
+    if (!parentBeat) throw new Error('Expected parent beat');
+    useWorkspace.getState().updateBeat({ ...parentBeat, payoffBeatIds: [payoff, child] });
+
+    useWorkspace.getState().deleteBeat(child);
+
+    expect(useWorkspace.getState().document.beats.find((beat) => beat.id === child)).toBeUndefined();
+    expect(useWorkspace.getState().document.beats.find((beat) => beat.id === parent)?.payoffBeatIds).toEqual([payoff]);
+    expect(useWorkspace.getState().document.beats.some((beat) => beat.parentId === child)).toBe(false);
+  });
 });

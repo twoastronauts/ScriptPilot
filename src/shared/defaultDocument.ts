@@ -254,6 +254,8 @@ export function createDocumentFromPlainText(title: string, text: string): Script
           id: uuid(),
           label: 'Act One',
           color: '#2f6fed',
+          startPage: 1,
+          endPage: 30,
           startElementId: elements[0].id,
           endElementId: elements[Math.max(0, elements.length - 1)].id,
           kind: 'act',

@@ -12,11 +12,11 @@ describe('Script Pilot V02 identity and project files', () => {
     expect(packageJson.build.artifactName).toContain('Script-Pilot-V02');
     expect(packageJson.build.fileAssociations).toEqual([
       expect.objectContaining({
-        ext: 'spx2',
-        name: 'Script Pilot V02 Project'
+        ext: 'spx',
+        name: 'Script Pilot Project'
       })
     ]);
-    expect(packageJson.build.fileAssociations.some((association) => association.ext === 'spx')).toBe(false);
+    expect(packageJson.build.fileAssociations.some((association) => association.ext === 'spx2')).toBe(false);
   });
 
   it('serializes V02 projects without losing V01 manual-open compatibility', () => {
