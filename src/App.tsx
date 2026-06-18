@@ -8,6 +8,7 @@ import { ScreenplayEditor } from './components/ScreenplayEditor';
 import { OutlineEditorStrip } from './components/StoryMapStrip';
 import { TitlePageEditor } from './components/TitlePageEditor';
 import { Toolbar } from './components/Toolbar';
+import { themeColorsToCssVariables } from './shared/themeColors';
 import { playTypewriterKey } from './shared/typewriterSound';
 import { useWorkspace } from './store/workspace';
 
@@ -28,33 +29,53 @@ export function App() {
     setRightRailCollapsed,
     setRightRailWidth,
     setOutlineHeight,
+    recordBackup,
+    setBackupDirectory,
     setWarning
   } = useWorkspace();
   const focusMode = document.settings.focusMode;
   const beatBoardFullscreen = !rightRailCollapsed && activeRightPanel === 'beats' && beatBoardMode === 'fullscreen';
   const beatBoardExpanded = !rightRailCollapsed && activeRightPanel === 'beats' && beatBoardMode === 'expanded';
   const showRightResizer = !focusMode && !beatBoardFullscreen && !rightRailCollapsed;
+  const themeColorVars = themeColorsToCssVariables(document.settings.themeColors);
 
   useEffect(() => {
     if (!document.settings.autosave || !dirty) return;
     const timeout = window.setTimeout(() => {
-      window.screenwriter?.createBackup(document, projectPath ?? fdxPath);
+      window.screenwriter?.createBackup(document, projectPath ?? fdxPath).then((result) => {
+        if (result && !result.canceled) recordBackup(result.data);
+      });
     }, document.settings.backupIntervalMinutes * 60 * 1000);
     return () => window.clearTimeout(timeout);
-  }, [document, dirty, projectPath, fdxPath]);
+  }, [document, dirty, projectPath, fdxPath, recordBackup]);
 
   useEffect(() => {
-    if (!document.settings.typewriterMode || document.settings.typewriterVolume <= 0 || workspaceView !== 'editor') return;
+    window.screenwriter?.getBackupDirectory().then((result) => {
+      if (result && !result.canceled) setBackupDirectory(result.data.path);
+    });
+  }, [setBackupDirectory]);
+
+  useEffect(() => {
+    window.screenwriter?.setWindowTitle({ title: document.title || 'Untitled Script', dirty });
+  }, [document.title, dirty]);
+
+  useEffect(() => {
+    if (
+      !document.settings.typewriterMode ||
+      !document.settings.typewriterSounds ||
+      (document.settings.typewriterVolume <= 0 && document.settings.typewriterBellVolume <= 0) ||
+      workspaceView !== 'editor'
+    ) return;
 
     function play(event: KeyboardEvent) {
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.repeat) return;
-      playTypewriterKey(event.key, document.settings.typewriterVolume);
+      playTypewriterKey(event.key, document.settings.typewriterVolume, document.settings.typewriterBellVolume);
     }
 
     window.addEventListener('keydown', play);
     return () => window.removeEventListener('keydown', play);
-  }, [document.settings.typewriterMode, document.settings.typewriterVolume, workspaceView]);
+  }, [document.settings.typewriterBellVolume, document.settings.typewriterMode, document.settings.typewriterSounds, document.settings.typewriterVolume, workspaceView]);
 
   useEffect(() => {
     if (!lastWarning) return;
@@ -101,7 +122,7 @@ export function App() {
 
   if (workspaceView === 'home') {
     return (
-      <div className={clsx('app', 'app-home', `theme-${document.settings.viewMode}`)}>
+      <div className={clsx('app', 'app-home', `theme-${document.settings.viewMode}`)} style={themeColorVars}>
         <HomePage />
         {lastWarning && <div className="toast">{lastWarning}</div>}
       </div>
@@ -120,7 +141,8 @@ export function App() {
       style={
         {
           '--right-rail-width': `${rightRailCollapsed ? 52 : rightRailWidth}px`,
-          '--outline-height': `${outlineHeight}px`
+          '--outline-height': `${outlineHeight}px`,
+          ...themeColorVars
         } as React.CSSProperties
       }
     >

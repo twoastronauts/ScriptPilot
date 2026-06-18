@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import packageJson from '../package.json';
 import { createDocumentFromPlainText } from '@/shared/defaultDocument';
+import { documentWithTitleFromSavePath, isGenericUntitledTitle, titleFromFilePath } from '@/shared/fileSafety';
 import { parseProject, PROJECT_FORMAT_VERSION, serializeProject } from '@/shared/projectFile';
 import type { ScriptDocument } from '@/shared/types';
 
@@ -44,6 +45,17 @@ describe('Script Pilot V02 identity and project files', () => {
     expect(document.exportPackages).toEqual([]);
     expect(document.settings.collabProvider).toBe('local');
     expect(document.settings.viewMode).toBe('midnight');
+    expect(document.settings.themeColors).toEqual({});
     expect(document.beats.every((beat) => beat.scriptSyncState === 'unlinked')).toBe(true);
+  });
+
+  it('updates generic untitled projects from the first saved .spx filename', () => {
+    const untitled = createDocumentFromPlainText('Untitled Script Pilot Script', 'INT. ROOM - DAY');
+    const titled = createDocumentFromPlainText('Already Named', 'INT. ROOM - DAY');
+
+    expect(isGenericUntitledTitle(untitled.title)).toBe(true);
+    expect(titleFromFilePath('C:\\Scripts\\Moon Landing.spx')).toBe('Moon Landing');
+    expect(documentWithTitleFromSavePath(untitled, 'C:\\Scripts\\Moon Landing.spx').title).toBe('Moon Landing');
+    expect(documentWithTitleFromSavePath(titled, 'C:\\Scripts\\Different Name.spx').title).toBe('Already Named');
   });
 });

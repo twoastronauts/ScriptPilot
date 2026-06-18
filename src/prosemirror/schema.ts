@@ -9,6 +9,8 @@ export interface PageChromeOptions {
   showPageNumbers?: boolean;
   pageNumberStart?: number;
   pageMode?: 'pages' | 'continuous';
+  sprintActive?: boolean;
+  sprintElementId?: string;
 }
 
 export const screenplaySchema = new Schema({
@@ -86,7 +88,8 @@ export const screenplaySchema = new Schema({
         revisionMark: { default: null },
         omitted: { default: false },
         formatStyle: { default: null },
-        generatedPageBreak: { default: false }
+        generatedPageBreak: { default: false },
+        sprintClass: { default: '' }
       },
       parseDOM: [
         {
@@ -109,7 +112,7 @@ export const screenplaySchema = new Schema({
       toDOM(node) {
         const hasRevision = Boolean(node.attrs.revisionColor);
         const attrs = {
-          class: `script-line ${node.attrs.scriptType}${hasRevision ? ' revision' : ''}${node.attrs.omitted ? ' omitted' : ''}`,
+          class: `script-line ${node.attrs.scriptType}${hasRevision ? ' revision' : ''}${node.attrs.omitted ? ' omitted' : ''}${node.attrs.sprintClass ? ` ${node.attrs.sprintClass}` : ''}`,
           'data-id': node.attrs.id,
           'data-script-type': node.attrs.scriptType,
           'data-revision-color': node.attrs.revisionColor ?? '',
@@ -129,10 +132,11 @@ export const screenplaySchema = new Schema({
 
 export function elementsToProseMirrorDoc(elements: ScriptElement[], options: PageChromeOptions = {}) {
   const pages = splitElementsIntoPages(elements);
+  const sprintClasses = sprintClassesForElements(elements, options);
   const pageNodes = pages.map((page, index) =>
     screenplaySchema.nodes.screenplayPage.create(
       pageAttrs(index, page.breakBefore, options),
-      page.elements.map(elementToProseMirrorNode)
+      page.elements.map((element) => elementToProseMirrorNode(element, sprintClasses.get(element.id)))
     )
   );
 
@@ -214,7 +218,7 @@ function pageAttrs(pageIndex: number, breakBefore: ScriptElement | undefined, op
   };
 }
 
-function elementToProseMirrorNode(element: ScriptElement) {
+function elementToProseMirrorNode(element: ScriptElement, sprintClass = '') {
   return screenplaySchema.nodes.screenplayElement.create(
     {
       id: element.id,
@@ -224,10 +228,32 @@ function elementToProseMirrorNode(element: ScriptElement) {
       revisionMark: element.revisionMark ?? null,
       omitted: Boolean(element.omitted),
       formatStyle: element.style ?? null,
-      generatedPageBreak: Boolean(element.generatedPageBreak)
+      generatedPageBreak: Boolean(element.generatedPageBreak),
+      sprintClass
     },
     element.text ? screenplaySchema.text(element.text) : undefined
   );
+}
+
+function sprintClassesForElements(elements: ScriptElement[], options: PageChromeOptions): Map<string, string> {
+  const classes = new Map<string, string>();
+  if (!options.sprintActive) return classes;
+  const visibleElements = elements.filter((element) => element.type !== 'page-break');
+  if (!visibleElements.length) return classes;
+  let currentIndex = options.sprintElementId ? visibleElements.findIndex((element) => element.id === options.sprintElementId) : -1;
+  if (currentIndex < 0) currentIndex = 0;
+
+  visibleElements.forEach((element, index) => {
+    if (index === currentIndex) classes.set(element.id, 'is-current-line');
+    else if (index === currentIndex - 1) classes.set(element.id, 'is-before-current-1');
+    else if (index === currentIndex - 2) classes.set(element.id, 'is-before-current-2');
+    else if (index === currentIndex - 3) classes.set(element.id, 'is-before-current-3');
+    else if (index === currentIndex - 4) classes.set(element.id, 'is-before-current-4');
+    else if (index < currentIndex - 4) classes.set(element.id, 'is-far-before-current');
+    else if (index > currentIndex) classes.set(element.id, 'is-after-current');
+  });
+
+  return classes;
 }
 
 function nodeToElement(node: import('prosemirror-model').Node, byId: Map<string, ScriptElement>, now: string): ScriptElement {

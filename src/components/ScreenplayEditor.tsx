@@ -15,7 +15,8 @@ import { ELEMENT_LABELS, estimatePageCount } from '@/shared/screenplay';
 import { collectSmartTypeOptions, type SmartTypeOption } from '@/shared/smartType';
 import { suggestSynonyms } from '@/shared/synonyms';
 import { correctionSpan, suggestCorrections } from '@/shared/proofing';
-import type { ScriptElement, ScriptElementType } from '@/shared/types';
+import { TRANSLATION_LANGUAGES, translateText, type TranslationLanguage } from '@/shared/translation';
+import type { ScriptElement, ScriptElementType, TextStyle } from '@/shared/types';
 
 interface SmartTypeMenu {
   options: SmartTypeOption[];
@@ -46,6 +47,25 @@ interface SpellingMenu {
   top: number;
 }
 
+interface WriterContextMenu {
+  left: number;
+  top: number;
+  elementId?: string;
+  selectedType: ScriptElementType;
+  elementText: string;
+  rangeFrom: number;
+  rangeTo: number;
+  selectedText: string;
+  word: string;
+  wordFrom: number;
+  wordTo: number;
+  synonyms: string[];
+  corrections: string[];
+}
+
+const contextElementTypes: ScriptElementType[] = ['scene-heading', 'action', 'character', 'parenthetical', 'dialogue', 'transition', 'shot', 'general'];
+const highlightColors = ['#ffe08a', '#a7d8ff', '#ffb1b1', '#c8f3d1'];
+
 export function ScreenplayEditor() {
   const shellRef = useRef<HTMLElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -54,10 +74,27 @@ export function ScreenplayEditor() {
   const menuRef = useRef<SmartTypeMenu | null>(null);
   const synonymMenuRef = useRef<SynonymMenu | null>(null);
   const spellingMenuRef = useRef<SpellingMenu | null>(null);
+  const writerContextMenuRef = useRef<WriterContextMenu | null>(null);
+  const writerMenuActionAtRef = useRef(0);
   const [smartTypeMenu, setSmartTypeMenu] = useState<SmartTypeMenu | null>(null);
   const [synonymMenu, setSynonymMenu] = useState<SynonymMenu | null>(null);
   const [spellingMenu, setSpellingMenu] = useState<SpellingMenu | null>(null);
-  const { document, selectedElementId, setElements, setSelectedElement, sprintStartedAt } = useWorkspace();
+  const [writerContextMenu, setWriterContextMenu] = useState<WriterContextMenu | null>(null);
+  const [writerNoteDraft, setWriterNoteDraft] = useState('');
+  const [writerNoteComposerOpen, setWriterNoteComposerOpen] = useState(false);
+  const {
+    document,
+    selectedElementId,
+    setElements,
+    setSelectedElement,
+    sprintStartedAt,
+    addScriptNoteToElement,
+    markElementRevised,
+    setElementType,
+    setWarning,
+    updateElementStyle
+  } = useWorkspace();
+  const sprintActiveRef = useRef(Boolean(sprintStartedAt));
   const elements = document.elements;
   const pageCount = useMemo(() => Math.max(1, estimatePageCount(elements)), [elements]);
   const selectedPage = useMemo(() => estimatePageForElement(elements, selectedElementId), [elements, selectedElementId]);
@@ -69,7 +106,9 @@ export function ScreenplayEditor() {
       showHeaderFooter: document.settings.showHeaderFooter,
       showPageNumbers: document.settings.showPageNumbers,
       pageNumberStart: document.settings.pageNumberStart,
-      pageMode: document.settings.pageMode
+      pageMode: document.settings.pageMode,
+      sprintActive: Boolean(sprintStartedAt),
+      sprintElementId: selectedElementId
     }),
     [
       document.title,
@@ -78,7 +117,9 @@ export function ScreenplayEditor() {
       document.settings.pageMode,
       document.settings.pageNumberStart,
       document.settings.showHeaderFooter,
-      document.settings.showPageNumbers
+      document.settings.showPageNumbers,
+      selectedElementId,
+      sprintStartedAt
     ]
   );
   const documentRef = useRef(document);
@@ -118,6 +159,21 @@ export function ScreenplayEditor() {
   }, [spellingMenu]);
 
   useEffect(() => {
+    writerContextMenuRef.current = writerContextMenu;
+  }, [writerContextMenu]);
+
+  useEffect(() => {
+    sprintActiveRef.current = Boolean(sprintStartedAt);
+    updateSprintLineClasses(shellRef.current, selectedElementId, sprintActiveRef.current);
+    const frame = window.requestAnimationFrame(() => updateSprintLineClasses(shellRef.current, selectedElementId, sprintActiveRef.current));
+    const timeout = window.setTimeout(() => updateSprintLineClasses(shellRef.current, selectedElementId, sprintActiveRef.current), 80);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+    };
+  }, [selectedElementId, sprintStartedAt]);
+
+  useEffect(() => {
     if (!selectedElementId && elements[0]?.id) {
       setSelectedElement(elements[0].id);
     }
@@ -133,10 +189,18 @@ export function ScreenplayEditor() {
     setSpellingMenu(null);
   }, []);
 
+  const closeWriterContextMenu = useCallback(() => {
+    writerContextMenuRef.current = null;
+    setWriterContextMenu(null);
+    setWriterNoteDraft('');
+    setWriterNoteComposerOpen(false);
+  }, []);
+
   const closeWritingMenus = useCallback(() => {
     closeSynonymMenu();
     closeSpellingMenu();
-  }, [closeSpellingMenu, closeSynonymMenu]);
+    closeWriterContextMenu();
+  }, [closeSpellingMenu, closeSynonymMenu, closeWriterContextMenu]);
 
   const updateSmartTypeMenu = useCallback(
     (view: EditorView) => {
@@ -225,6 +289,97 @@ export function ScreenplayEditor() {
     closeSpellingMenu();
   }, [closeSpellingMenu]);
 
+  const replaceTextRange = useCallback((from: number, to: number, replacement: string) => {
+    const view = viewRef.current;
+    if (!view) return false;
+    view.dispatch(view.state.tr.insertText(replacement, from, to).scrollIntoView());
+    view.focus();
+    closeWritingMenus();
+    return true;
+  }, [closeWritingMenus]);
+
+  const openContextNoteComposer = useCallback(() => {
+    const menu = writerContextMenuRef.current;
+    if (!menu?.elementId) return;
+    setWriterNoteDraft(menu.selectedText ? `Selected: "${menu.selectedText}"\n` : '');
+    setWriterNoteComposerOpen(true);
+  }, []);
+
+  const submitContextNote = useCallback(() => {
+    const menu = writerContextMenuRef.current;
+    const note = writerNoteDraft.trim();
+    if (!menu?.elementId || !note) return;
+    setSelectedElement(menu.elementId);
+    addScriptNoteToElement(menu.elementId, note);
+    setWarning('Note added to selected script line.');
+    closeWritingMenus();
+  }, [addScriptNoteToElement, closeWritingMenus, setSelectedElement, setWarning, writerNoteDraft]);
+
+  const cancelContextNote = useCallback(() => {
+    setWriterNoteDraft('');
+    setWriterNoteComposerOpen(false);
+  }, []);
+
+  const copyContextText = useCallback(async () => {
+    const menu = writerContextMenuRef.current;
+    const text = menu?.selectedText || menu?.word || menu?.elementText;
+    if (!text) return;
+    const copied = await copyTextToClipboard(text);
+    setWarning(copied ? 'Selected text copied.' : 'Copy failed.');
+    closeWritingMenus();
+  }, [closeWritingMenus, setWarning]);
+
+  const applyContextFormat = useCallback((patch: Partial<TextStyle>) => {
+    const menu = writerContextMenuRef.current;
+    if (!menu?.elementId) return;
+    setSelectedElement(menu.elementId);
+    updateElementStyle(menu.elementId, patch);
+    closeWritingMenus();
+  }, [closeWritingMenus, setSelectedElement, updateElementStyle]);
+
+  const applyContextElementType = useCallback((type: ScriptElementType) => {
+    const menu = writerContextMenuRef.current;
+    if (!menu?.elementId) return;
+    setSelectedElement(menu.elementId);
+    setElementType(menu.elementId, type);
+    closeWritingMenus();
+  }, [closeWritingMenus, setElementType, setSelectedElement]);
+
+  const markContextRevision = useCallback(() => {
+    const menu = writerContextMenuRef.current;
+    if (!menu?.elementId) return;
+    setSelectedElement(menu.elementId);
+    markElementRevised(menu.elementId);
+    closeWritingMenus();
+  }, [closeWritingMenus, markElementRevised, setSelectedElement]);
+
+  const translateContextSelection = useCallback(async (language: TranslationLanguage) => {
+    const menu = writerContextMenuRef.current;
+    const text = menu?.selectedText || menu?.word;
+    if (!menu || !text) {
+      setWarning('Select text before translating.');
+      return;
+    }
+    setWarning('Translating selected text...');
+    try {
+      const translated = await translateText(text, language);
+      replaceTextRange(menu.selectedText ? menu.rangeFrom : menu.wordFrom, menu.selectedText ? menu.rangeTo : menu.wordTo, translated);
+      setWarning(`Translated to ${TRANSLATION_LANGUAGES.find((item) => item.code === language)?.label ?? language}.`);
+    } catch (error) {
+      setWarning(error instanceof Error ? error.message : 'Translation failed.');
+      closeWritingMenus();
+    }
+  }, [closeWritingMenus, replaceTextRange, setWarning]);
+
+  const runWriterMenuAction = useCallback((event: React.MouseEvent, action: () => unknown | Promise<unknown>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const now = window.performance.now();
+    if (now - writerMenuActionAtRef.current < 80) return;
+    writerMenuActionAtRef.current = now;
+    void action();
+  }, []);
+
   const moveSmartTypeSelection = useCallback((direction: 1 | -1) => {
     const menu = menuRef.current;
     if (!menu) return false;
@@ -305,13 +460,13 @@ export function ScreenplayEditor() {
 
   useEffect(() => {
     function closeOnOutsidePointer(event: PointerEvent) {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('.synonym-menu, .spelling-menu')) return;
+      const target = event.target instanceof Element ? event.target : event.target instanceof Node ? event.target.parentElement : null;
+      if (target?.closest('.synonym-menu, .spelling-menu, .writer-context-menu')) return;
       closeWritingMenus();
     }
 
-    window.addEventListener('pointerdown', closeOnOutsidePointer, true);
-    return () => window.removeEventListener('pointerdown', closeOnOutsidePointer, true);
+    window.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => window.removeEventListener('pointerdown', closeOnOutsidePointer);
   }, [closeWritingMenus]);
 
   const showSpellingMenu = useCallback((range: Pick<SpellingMenu, 'word' | 'from' | 'to'>, coords: { left: number; top: number }) => {
@@ -382,7 +537,10 @@ export function ScreenplayEditor() {
           elementsRef.current = nextElements;
         }
 
-        window.requestAnimationFrame(() => updateSmartTypeMenu(view));
+        window.requestAnimationFrame(() => {
+          updateSmartTypeMenu(view);
+          updateSprintLineClasses(shellRef.current, id, sprintActiveRef.current);
+        });
       },
       attributes: {
         'aria-label': 'Screenplay editor',
@@ -401,21 +559,36 @@ export function ScreenplayEditor() {
           return false;
         },
         blur() {
-          closeWritingMenus();
+          window.setTimeout(() => {
+            const active = window.document.activeElement as HTMLElement | null;
+            if (active?.closest('.writer-context-menu, .synonym-menu, .spelling-menu')) return;
+            closeWritingMenus();
+          }, 0);
           return false;
         },
         contextmenu(view, event) {
           const mouseEvent = event as MouseEvent;
           const position = view.posAtCoords({ left: mouseEvent.clientX, top: mouseEvent.clientY });
           if (!position) return false;
-          const range = wordRangeAtPosition(view.state, position.pos);
-          if (!range.word) return false;
-          if (!showSpellingMenu(range, { left: mouseEvent.clientX, top: mouseEvent.clientY })) return false;
+          const menu = createWriterContextMenu(view, position.pos, mouseEvent, shellRef.current);
+          if (!menu) return false;
+          setSelectedElement(menu.elementId);
+          closeSynonymMenu();
+          closeSpellingMenu();
+          setWriterNoteDraft('');
+          setWriterNoteComposerOpen(false);
+          writerContextMenuRef.current = menu;
+          setWriterContextMenu(menu);
           mouseEvent.preventDefault();
           return true;
         }
       },
       handleKeyDown(view, event) {
+        if (writerContextMenuRef.current && event.key === 'Escape') {
+          event.preventDefault();
+          closeWriterContextMenu();
+          return true;
+        }
         if ((event.ctrlKey || event.metaKey) && event.key === '.') {
           event.preventDefault();
           return requestSpellingMenu();
@@ -522,6 +695,7 @@ export function ScreenplayEditor() {
     applySynonym,
     closeSpellingMenu,
     closeSynonymMenu,
+    closeWriterContextMenu,
     closeWritingMenus,
     editorPlugins,
     jumpSpellingSelection,
@@ -578,7 +752,10 @@ export function ScreenplayEditor() {
         selection
       });
       view.updateState(nextState);
-      window.requestAnimationFrame(() => updateSmartTypeMenu(view));
+      window.requestAnimationFrame(() => {
+        updateSmartTypeMenu(view);
+        updateSprintLineClasses(shellRef.current, currentId, sprintActiveRef.current);
+      });
       applyingRemoteRef.current = false;
     }
   }, [editorPlugins, elements, pageChromeOptions, selectedElementId, updateSmartTypeMenu]);
@@ -602,23 +779,7 @@ export function ScreenplayEditor() {
   }, [document.settings.spellcheck]);
 
   useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
-    const lines = Array.from(host.querySelectorAll<HTMLElement>('.script-line'));
-    lines.forEach((line) =>
-      line.classList.remove('is-current-line', 'is-before-current-1', 'is-before-current-2', 'is-before-current-3', 'is-before-current-4', 'is-far-before-current', 'is-after-current')
-    );
-    const currentIndex = lines.findIndex((line) => line.dataset.id === selectedElementId);
-    if (currentIndex < 0) return;
-    lines.forEach((line, index) => {
-      if (index === currentIndex) line.classList.add('is-current-line');
-      else if (index === currentIndex - 1) line.classList.add('is-before-current-1');
-      else if (index === currentIndex - 2) line.classList.add('is-before-current-2');
-      else if (index === currentIndex - 3) line.classList.add('is-before-current-3');
-      else if (index === currentIndex - 4) line.classList.add('is-before-current-4');
-      else if (index < currentIndex - 4) line.classList.add('is-far-before-current');
-      else if (index > currentIndex) line.classList.add('is-after-current');
-    });
+    updateSprintLineClasses(shellRef.current, selectedElementId, Boolean(sprintStartedAt));
   }, [elements, selectedElementId, sprintStartedAt]);
 
   return (
@@ -709,6 +870,177 @@ export function ScreenplayEditor() {
           </button>
         </div>
       )}
+      {writerContextMenu && (
+        <div className="writer-context-menu" style={{ left: writerContextMenu.left, top: writerContextMenu.top }} role="menu" aria-label="Writer tools">
+          <div className="writer-context-menu__header">
+            <strong>{writerContextMenu.selectedText || writerContextMenu.word || 'Line tools'}</strong>
+            <small>{ELEMENT_LABELS[writerContextMenu.selectedType]}</small>
+          </div>
+          {writerContextMenu.corrections.length > 0 && (
+            <div className="writer-context-menu__section">
+              <span>Fix typo</span>
+              <div className="writer-context-menu__chips">
+                {writerContextMenu.corrections.slice(0, 5).map((option) => (
+                  <button
+                    key={option}
+                    onMouseDown={(event) => runWriterMenuAction(event, () => replaceTextRange(writerContextMenu.wordFrom, writerContextMenu.wordTo, option))}
+                    onClick={(event) => runWriterMenuAction(event, () => replaceTextRange(writerContextMenu.wordFrom, writerContextMenu.wordTo, option))}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {writerContextMenu.synonyms.length > 0 && (
+            <div className="writer-context-menu__section">
+              <span>Alt Word</span>
+              <div className="writer-context-menu__chips">
+                {writerContextMenu.synonyms.slice(0, 8).map((option) => (
+                  <button
+                    key={option}
+                    onMouseDown={(event) => runWriterMenuAction(event, () => replaceTextRange(writerContextMenu.wordFrom, writerContextMenu.wordTo, option))}
+                    onClick={(event) => runWriterMenuAction(event, () => replaceTextRange(writerContextMenu.wordFrom, writerContextMenu.wordTo, option))}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="writer-context-menu__section">
+            <span>Writer actions</span>
+            <div className="writer-context-menu__grid">
+              <button onMouseDown={(event) => runWriterMenuAction(event, openContextNoteComposer)} onClick={(event) => runWriterMenuAction(event, openContextNoteComposer)}>Add note</button>
+              <button onMouseDown={(event) => runWriterMenuAction(event, copyContextText)} onClick={(event) => runWriterMenuAction(event, copyContextText)}>Copy</button>
+              <button onMouseDown={(event) => runWriterMenuAction(event, markContextRevision)} onClick={(event) => runWriterMenuAction(event, markContextRevision)}>Mark revision</button>
+              <button
+                onMouseDown={(event) => runWriterMenuAction(event, () => applyContextFormat({ backgroundColor: undefined }))}
+                onClick={(event) => runWriterMenuAction(event, () => applyContextFormat({ backgroundColor: undefined }))}
+              >
+                Clear highlight
+              </button>
+            </div>
+            {writerNoteComposerOpen && (
+              <div className="writer-context-menu__note-composer">
+                <textarea
+                  aria-label="Script note"
+                  value={writerNoteDraft}
+                  placeholder="Write a note for this line..."
+                  onMouseDown={(event) => event.stopPropagation()}
+                  onChange={(event) => setWriterNoteDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+                      event.preventDefault();
+                      submitContextNote();
+                    }
+                    if (event.key === 'Escape') {
+                      event.preventDefault();
+                      cancelContextNote();
+                    }
+                  }}
+                />
+                <div className="writer-context-menu__note-actions">
+                  <button
+                    disabled={!writerNoteDraft.trim()}
+                    onMouseDown={(event) => runWriterMenuAction(event, submitContextNote)}
+                    onClick={(event) => runWriterMenuAction(event, submitContextNote)}
+                  >
+                    Save note
+                  </button>
+                  <button onMouseDown={(event) => runWriterMenuAction(event, cancelContextNote)} onClick={(event) => runWriterMenuAction(event, cancelContextNote)}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="writer-context-menu__section">
+            <span>Translate selection</span>
+            <div className="writer-context-menu__chips">
+              {TRANSLATION_LANGUAGES.map((language) => (
+                <button
+                  key={language.code}
+                  onMouseDown={(event) => runWriterMenuAction(event, () => translateContextSelection(language.code))}
+                  onClick={(event) => runWriterMenuAction(event, () => translateContextSelection(language.code))}
+                >
+                  {language.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="writer-context-menu__section">
+            <span>Format line</span>
+            <div className="writer-context-menu__grid">
+              <button
+                onMouseDown={(event) => runWriterMenuAction(event, () => applyContextFormat({ bold: true, fontWeight: '700' }))}
+                onClick={(event) => runWriterMenuAction(event, () => applyContextFormat({ bold: true, fontWeight: '700' }))}
+              >
+                Bold
+              </button>
+              <button
+                onMouseDown={(event) => runWriterMenuAction(event, () => applyContextFormat({ italic: true }))}
+                onClick={(event) => runWriterMenuAction(event, () => applyContextFormat({ italic: true }))}
+              >
+                Italic
+              </button>
+              <button
+                onMouseDown={(event) => runWriterMenuAction(event, () => applyContextFormat({ underline: true }))}
+                onClick={(event) => runWriterMenuAction(event, () => applyContextFormat({ underline: true }))}
+              >
+                Underline
+              </button>
+              <button
+                onMouseDown={(event) =>
+                  runWriterMenuAction(event, () =>
+                    applyContextFormat({ bold: false, italic: false, underline: false, fontWeight: '400', textColor: undefined, backgroundColor: undefined })
+                  )
+                }
+                onClick={(event) =>
+                  runWriterMenuAction(event, () =>
+                    applyContextFormat({ bold: false, italic: false, underline: false, fontWeight: '400', textColor: undefined, backgroundColor: undefined })
+                  )
+                }
+              >
+                Reset
+              </button>
+            </div>
+            <div className="writer-context-menu__swatches">
+              {highlightColors.map((color) => (
+                <button
+                  key={color}
+                  title={`Highlight ${color}`}
+                  style={{ '--swatch': color } as React.CSSProperties}
+                  onMouseDown={(event) => runWriterMenuAction(event, () => applyContextFormat({ backgroundColor: color }))}
+                  onClick={(event) => runWriterMenuAction(event, () => applyContextFormat({ backgroundColor: color }))}
+                />
+              ))}
+              <input
+                aria-label="Text color"
+                type="color"
+                defaultValue="#f7fbff"
+                onMouseDown={(event) => event.stopPropagation()}
+                onChange={(event) => applyContextFormat({ textColor: event.target.value })}
+              />
+            </div>
+          </div>
+          <div className="writer-context-menu__section">
+            <span>Element style</span>
+            <div className="writer-context-menu__chips">
+              {contextElementTypes.map((type) => (
+                <button
+                  key={type}
+                  className={writerContextMenu.selectedType === type ? 'is-active' : ''}
+                  onMouseDown={(event) => runWriterMenuAction(event, () => applyContextElementType(type))}
+                  onClick={(event) => runWriterMenuAction(event, () => applyContextElementType(type))}
+                >
+                  {ELEMENT_LABELS[type]}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -734,6 +1066,87 @@ function lineWidthForElement(type: ScriptElementType): number {
   if (type === 'parenthetical') return 28;
   if (type === 'character') return 24;
   return 58;
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  try {
+    const result = await window.screenwriter?.copyToClipboard?.(text);
+    if (result && !result.canceled) return true;
+  } catch {
+    // Fall through to browser clipboard APIs for local dev preview.
+  }
+
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // Fall through to the legacy textarea copy path.
+  }
+
+  const textarea = window.document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  window.document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    return window.document.execCommand('copy');
+  } finally {
+    textarea.remove();
+  }
+}
+
+function createWriterContextMenu(view: EditorView, position: number, event: MouseEvent, shell: HTMLElement | null): WriterContextMenu | undefined {
+  const state = view.state;
+  const elementContext = elementContextAt(state, position);
+  if (!elementContext.elementId) return undefined;
+
+  const hasSelection = !state.selection.empty;
+  const rangeFrom = hasSelection ? state.selection.from : position;
+  const rangeTo = hasSelection ? state.selection.to : position;
+  const selectedText = hasSelection ? state.doc.textBetween(rangeFrom, rangeTo, ' ').trim() : '';
+  const wordRange = hasSelection ? wordRangeFromTextRange(state, rangeFrom, rangeTo, selectedText) : wordRangeAtPosition(state, position);
+  const word = wordRange.word.trim();
+  const shellRect = shell?.getBoundingClientRect();
+  const rawLeft = event.clientX - (shellRect?.left ?? 0);
+  const rawTop = event.clientY - (shellRect?.top ?? 0);
+  const maxLeft = Math.max(12, (shellRect?.width ?? 520) - 360);
+  const maxTop = Math.max(48, (shellRect?.height ?? 640) - 520);
+
+  return {
+    left: Math.max(12, Math.min(maxLeft, rawLeft)),
+    top: Math.max(48, Math.min(maxTop, rawTop)),
+    elementId: elementContext.elementId,
+    selectedType: elementContext.selectedType,
+    elementText: elementContext.elementText,
+    rangeFrom,
+    rangeTo,
+    selectedText,
+    word,
+    wordFrom: wordRange.from,
+    wordTo: wordRange.to,
+    synonyms: word ? suggestSynonyms(word) : [],
+    corrections: word ? suggestCorrections(word).slice(0, 6) : []
+  };
+}
+
+function elementContextAt(state: EditorState, position: number): { elementId?: string; selectedType: ScriptElementType; elementText: string } {
+  const resolved = state.doc.resolve(Math.max(1, Math.min(position, state.doc.content.size)));
+  for (let depth = resolved.depth; depth >= 0; depth -= 1) {
+    const node = resolved.node(depth);
+    if (node.type.name === 'screenplayElement') {
+      return {
+        elementId: node.attrs.id as string | undefined,
+        selectedType: (node.attrs.scriptType ?? 'action') as ScriptElementType,
+        elementText: node.textContent
+      };
+    }
+  }
+  return { selectedType: 'action', elementText: '' };
 }
 
 function createSelectionNearElement(doc: ProseMirrorNode, elementId?: string, parentOffset = 0): TextSelection | undefined {
@@ -812,4 +1225,29 @@ function wordRangeFromTextRange(state: EditorState, from: number, to: number, fa
 
 function docMatchesElements(doc: ProseMirrorNode, elements: ScriptElement[], pageChromeOptions: PageChromeOptions): boolean {
   return doc.eq(elementsToProseMirrorDoc(elements, pageChromeOptions));
+}
+
+function updateSprintLineClasses(host: HTMLElement | null, selectedElementId: string | undefined, sprintActive: boolean): void {
+  if (!host) return;
+  const classes = ['is-current-line', 'is-before-current-1', 'is-before-current-2', 'is-before-current-3', 'is-before-current-4', 'is-far-before-current', 'is-after-current'];
+  const lines = Array.from(host.querySelectorAll<HTMLElement>('.script-line'));
+  lines.forEach((line) => line.classList.remove(...classes));
+  if (!sprintActive || !selectedElementId) return;
+
+  let currentIndex = selectedElementId ? lines.findIndex((line) => line.dataset.id === selectedElementId) : -1;
+  if (currentIndex < 0) {
+    const activeLine = document.activeElement?.closest?.('.script-line') as HTMLElement | null;
+    currentIndex = activeLine ? lines.indexOf(activeLine) : -1;
+  }
+  if (currentIndex < 0) currentIndex = 0;
+  if (currentIndex < 0) return;
+  lines.forEach((line, index) => {
+    if (index === currentIndex) line.classList.add('is-current-line');
+    else if (index === currentIndex - 1) line.classList.add('is-before-current-1');
+    else if (index === currentIndex - 2) line.classList.add('is-before-current-2');
+    else if (index === currentIndex - 3) line.classList.add('is-before-current-3');
+    else if (index === currentIndex - 4) line.classList.add('is-before-current-4');
+    else if (index < currentIndex - 4) line.classList.add('is-far-before-current');
+    else if (index > currentIndex) line.classList.add('is-after-current');
+  });
 }

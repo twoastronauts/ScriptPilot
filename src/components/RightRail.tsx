@@ -6,6 +6,7 @@ import { StatsPanel } from './panels/StatsPanel';
 import { ProductionPanel } from './panels/ProductionPanel';
 import { StudioPanel } from './panels/StudioPanel';
 import { ShortcutsPanel } from './panels/ShortcutsPanel';
+import { CollaborationPanel } from './panels/CollaborationPanel';
 import { SettingsPanel } from './panels/SettingsPanel';
 import { useWorkspace } from '@/store/workspace';
 
@@ -17,6 +18,7 @@ const tabs = [
   { id: 'production', label: 'Notes/Tags', icon: StickyNote },
   { id: 'studio', label: 'Shot List', icon: Clapperboard },
   { id: 'shortcuts', label: 'Shortcuts', icon: Keyboard },
+  { id: 'collaboration', label: 'Collaboration', icon: GitBranch },
   { id: 'settings', label: 'Settings', icon: Settings }
 ] as const;
 
@@ -39,9 +41,6 @@ export function RightRail() {
             </button>
           );
         })}
-        <button title="Collaboration ready">
-          <GitBranch size={17} />
-        </button>
         <button className="rail-tabs__collapse" title={rightRailCollapsed ? 'Show side panel' : 'Hide side panel'} onClick={toggleRightRailCollapsed}>
           {rightRailCollapsed ? <PanelRightOpen size={17} /> : <PanelRightClose size={17} />}
         </button>
@@ -54,6 +53,7 @@ export function RightRail() {
         {activeRightPanel === 'production' && <ProductionPanel />}
         {activeRightPanel === 'studio' && <StudioPanel />}
         {activeRightPanel === 'shortcuts' && <ShortcutsPanel />}
+        {activeRightPanel === 'collaboration' && <CollaborationPanel />}
         {activeRightPanel === 'settings' && <SettingsPanel />}
       </div>
     </aside>

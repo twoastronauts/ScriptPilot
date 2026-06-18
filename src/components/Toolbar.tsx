@@ -27,7 +27,7 @@ import {
 import { useWorkspace } from '@/store/workspace';
 import { createDocumentFromPlainText } from '@/shared/defaultDocument';
 import { ELEMENT_LABELS } from '@/shared/screenplay';
-import { playTypewriterKey } from '@/shared/typewriterSound';
+import { playTypewriterReturnBell } from '@/shared/typewriterSound';
 import type { ScriptElementType, ViewMode } from '@/shared/types';
 import scriptPilotIcon from '@/assets/script-pilot-icon.png';
 import { TextFormatControls } from './TextFormatControls';
@@ -45,14 +45,18 @@ export function Toolbar() {
     projectPath,
     fdxPath,
     dirty,
+    lastSavedAt,
+    lastBackupAt,
+    lastBackupPath,
+    collabSession,
     sprintStartedAt,
     showTitlePage,
     selectedElementId,
     setDocument,
     setWorkspaceView,
-    setProjectPath,
-    setFdxPath,
-    markClean,
+    finishProjectSave,
+    finishFdxSave,
+    recordBackup,
     setViewMode,
     toggleTypewriterMode,
     toggleFocusMode,
@@ -93,12 +97,12 @@ export function Toolbar() {
     const bucket = Math.floor(elapsedMs / intervalMs);
     if (bucket > 0 && bucket > lastChimeRef.current) {
       lastChimeRef.current = bucket;
-      playSprintChime(document.settings.typewriterVolume);
+      playSprintChime(document.settings.typewriterBellVolume);
       setSprintNotice(`${document.settings.sprintChimeMinutes}m mark`);
       window.clearTimeout(noticeTimeoutRef.current);
       noticeTimeoutRef.current = window.setTimeout(() => setSprintNotice(null), 10_000);
     }
-  }, [document.settings.sprintChimeEnabled, document.settings.sprintChimeMinutes, sprintNow, sprintStartedAt]);
+  }, [document.settings.sprintChimeEnabled, document.settings.sprintChimeMinutes, document.settings.typewriterBellVolume, sprintNow, sprintStartedAt]);
 
   useEffect(() => () => window.clearTimeout(noticeTimeoutRef.current), []);
 
@@ -111,8 +115,8 @@ export function Toolbar() {
   async function saveProject() {
     const result = await window.screenwriter?.saveProject(document, projectPath);
     if (!result || result.canceled) return;
-    setProjectPath(result.path);
-    markClean();
+    finishProjectSave(result.data, result.path);
+    setWarning(`Saved project: ${result.path}`);
   }
 
   async function openFdx() {
@@ -124,8 +128,8 @@ export function Toolbar() {
   async function saveFdx() {
     const result = await window.screenwriter?.saveFdx(document, fdxPath);
     if (!result || result.canceled) return;
-    setFdxPath(result.path);
-    markClean();
+    finishFdxSave(result.data, result.path);
+    setWarning(`Saved FDX: ${result.path}`);
   }
 
   async function exportPdf() {
@@ -146,11 +150,18 @@ export function Toolbar() {
 
   async function createBackup() {
     const result = await window.screenwriter?.createBackup(document, projectPath ?? fdxPath);
-    if (result && !result.canceled) setWarning(`Backup created: ${result.path}`);
+    if (result && !result.canceled) {
+      recordBackup(result.data);
+      setWarning(`Backup created: ${result.data.path}`);
+    }
   }
 
   const saveState = dirty ? 'Unsaved' : 'Saved';
   const workspaceState = document.settings.focusMode ? `Focus - ${saveState}` : saveState;
+  const activePath = projectPath ?? fdxPath;
+  const fileName = activePath ? fileNameFromPath(activePath) : 'No file yet';
+  const fileTitle = document.title || 'Untitled Script';
+  const fileStatusTitle = activePath ? `${activePath}${lastBackupPath ? `\nLast backup: ${lastBackupPath}` : ''}` : 'Save this project to choose a .spx path.';
   const focusTitle = document.settings.focusMode ? 'Exit focus mode' : 'Focus mode';
   const sprintTitle = sprintStartedAt ? 'Stop sprint and record session delta' : 'Start sprint';
   const sprintElapsed = sprintStartedAt ? Math.max(0, sprintNow - new Date(sprintStartedAt).getTime()) : 0;
@@ -165,6 +176,12 @@ export function Toolbar() {
         <img src={scriptPilotIcon} alt="" />
         <strong>Script Pilot</strong>
         <span>{workspaceState}</span>
+      </div>
+      <div className="toolbar__file-status" title={fileStatusTitle}>
+        <strong>{fileTitle}</strong>
+        <span>{fileName}</span>
+        <small>{lastSavedAt ? `Saved ${formatClock(lastSavedAt)}` : saveState}{lastBackupAt ? ` / backup ${formatClock(lastBackupAt)}` : ''}</small>
+        {collabSession && <i>{collabSession.isHost ? 'Hosting' : 'Live'}</i>}
       </div>
       <div className="toolbar__group">
         <button title="Home" onClick={() => setWorkspaceView('home')}>
@@ -343,6 +360,16 @@ function formatElapsed(milliseconds: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+function formatClock(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'unknown';
+  return new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' }).format(date);
+}
+
+function fileNameFromPath(value: string): string {
+  return value.replace(/\\/g, '/').split('/').pop() || value;
+}
+
 function playSprintChime(volume: number): void {
-  playTypewriterKey('Enter', Math.max(0.35, Math.min(1, volume || 0.7)));
+  playTypewriterReturnBell(Math.max(0.35, Math.min(1, volume || 0.7)));
 }

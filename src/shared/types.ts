@@ -13,6 +13,40 @@ export type ScriptFormat = 'screenplay' | 'tv' | 'stage-play' | 'novel' | 'comic
 
 export type ViewMode = 'day' | 'night' | 'midnight';
 
+export interface ThemeColorSettings {
+  bg?: string;
+  bgElevated?: string;
+  bgSoft?: string;
+  panel?: string;
+  panelSolid?: string;
+  panelRaised?: string;
+  page?: string;
+  pageInk?: string;
+  pageMuted?: string;
+  text?: string;
+  textStrong?: string;
+  muted?: string;
+  muted2?: string;
+  border?: string;
+  borderStrong?: string;
+  controlBg?: string;
+  controlHover?: string;
+  controlBorder?: string;
+  fieldBg?: string;
+  scrollTrack?: string;
+  scrollThumb?: string;
+  scrollThumbHover?: string;
+  accent?: string;
+  accentInk?: string;
+  accentSoft?: string;
+  brass?: string;
+  teal?: string;
+  blue?: string;
+  warning?: string;
+  danger?: string;
+  focus?: string;
+}
+
 export interface TextStyle {
   fontFamily?: string;
   fontSize?: string;
@@ -246,8 +280,70 @@ export interface CollabRoom {
   id: string;
   roomUrl: string;
   provider: 'local' | 'hocuspocus' | 'websocket';
-  permission: 'owner' | 'edit' | 'comment' | 'read';
+  permission: CollabPermission;
+  hostName?: string;
+  hostPort?: number;
+  roomToken?: string;
+  startedAt?: string;
+  endedAt?: string;
+  participantCount?: number;
+  isHost?: boolean;
+  status?: CollabStatus;
   lastSyncedAt?: string;
+}
+
+export type CollabPermission = 'host' | 'edit' | 'comment' | 'read';
+export type CollabStatus = 'offline' | 'starting' | 'hosting' | 'joining' | 'connected' | 'reconnecting' | 'ended' | 'error';
+
+export interface CollabParticipant {
+  id: string;
+  name: string;
+  color: string;
+  permission: CollabPermission;
+  page?: number;
+  scene?: string;
+  selectedElementId?: string;
+  online: boolean;
+  isLocal?: boolean;
+  lastSeenAt: string;
+}
+
+export interface CollabInvite {
+  roomId: string;
+  roomName: string;
+  url: string;
+  host: string;
+  port: number;
+  token: string;
+  permission: CollabPermission;
+  appUrl: string;
+  manualCode: string;
+}
+
+export interface CollabHostStatus {
+  roomId: string;
+  roomName: string;
+  url: string;
+  host: string;
+  port: number;
+  startedAt: string;
+  endedAt?: string;
+  status: CollabStatus;
+  isHost: boolean;
+  invite: CollabInvite;
+}
+
+export interface CollabSession {
+  roomId: string;
+  roomName: string;
+  url: string;
+  token: string;
+  permission: CollabPermission;
+  isHost: boolean;
+  status: CollabStatus;
+  startedAt?: string;
+  endedAt?: string;
+  invite?: CollabInvite;
 }
 
 export interface ExportPackage {
@@ -267,6 +363,7 @@ export interface ProjectSettings {
   typewriterMode: boolean;
   typewriterSounds: boolean;
   typewriterVolume: number;
+  typewriterBellVolume: number;
   pageMode: 'pages' | 'continuous';
   showPageNumbers: boolean;
   pageNumberStart: number;
@@ -285,6 +382,7 @@ export interface ProjectSettings {
   backupIntervalMinutes: number;
   sprintChimeEnabled: boolean;
   sprintChimeMinutes: number;
+  themeColors?: ThemeColorSettings;
   customPdfColors: boolean;
   revisionMode: boolean;
   showRevisionMarks: boolean;

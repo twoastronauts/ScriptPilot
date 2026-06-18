@@ -1,24 +1,83 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, FileClock, Lightbulb, MessageSquareText, Sparkles, Stethoscope } from 'lucide-react';
-import { createProductionPaginationPlan } from '@/shared/formattingV2';
-import { runScriptDoctor, type OverusedWordIssue } from '@/shared/scriptDoctor';
-import { computeWritingStats } from '@/shared/stats';
+import { createProductionPaginationPlan, type ProductionPaginationPlan } from '@/shared/formattingV2';
+import { runScriptDoctor, type OverusedWordIssue, type ScriptDoctorReport } from '@/shared/scriptDoctor';
+import { computeWritingStats, type WritingStats } from '@/shared/stats';
 import { useWorkspace } from '@/store/workspace';
-import type { StoryCheckResult } from '@/shared/types';
+import type { ScriptDocument, StoryCheckResult } from '@/shared/types';
+import type { ScriptDoctorWorkerError, ScriptDoctorWorkerRequest, ScriptDoctorWorkerResult } from '@/workers/scriptDoctor.worker';
 
 export function WriterAssistantPanel() {
   const { document, setSelectedElement, captureDraftVersion, createRevisionMemo } = useWorkspace();
-  const stats = useMemo(() => computeWritingStats(document), [document]);
-  const report = useMemo(() => runScriptDoctor(document), [document]);
-  const pagination = useMemo(() => createProductionPaginationPlan(document.elements, document.settings.pageNumberStart), [document.elements, document.settings.pageNumberStart]);
+  const [analysis, setAnalysis] = useState<DoctorAnalysis>(() => createPendingAnalysis(document));
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
+  const workerRef = useRef<Worker | null>(null);
+  const documentKey = useMemo(
+    () => `${document.id}:${document.updatedAt}:${document.elements.length}:${document.settings.pageNumberStart}`,
+    [document.elements.length, document.id, document.settings.pageNumberStart, document.updatedAt]
+  );
+
+  useEffect(() => {
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    setAnalyzing(true);
+    setAnalysisError(null);
+
+    if (typeof Worker !== 'undefined') {
+      workerRef.current?.terminate();
+      const worker = new Worker(new URL('../../workers/scriptDoctor.worker.ts', import.meta.url), { type: 'module' });
+      workerRef.current = worker;
+      worker.onmessage = (event: MessageEvent<ScriptDoctorWorkerResult | ScriptDoctorWorkerError>) => {
+        if (event.data.requestId !== requestId) return;
+        if ('error' in event.data) {
+          setAnalysisError(event.data.error);
+        } else {
+          setAnalysis({ report: event.data.report, stats: event.data.stats, pagination: event.data.pagination });
+        }
+        setAnalyzing(false);
+        worker.terminate();
+        if (workerRef.current === worker) workerRef.current = null;
+      };
+      worker.onerror = (error) => {
+        if (requestIdRef.current !== requestId) return;
+        setAnalysisError(error.message || 'Script Doctor worker failed.');
+        setAnalyzing(false);
+        worker.terminate();
+        if (workerRef.current === worker) workerRef.current = null;
+      };
+      const payload: ScriptDoctorWorkerRequest = {
+        requestId,
+        document: leanDoctorDocument(document)
+      };
+      worker.postMessage(payload);
+      return () => worker.terminate();
+    }
+
+    const timeout = window.setTimeout(() => {
+      if (requestIdRef.current !== requestId) return;
+      try {
+        setAnalysis(computeDoctorAnalysis(document));
+      } catch (error) {
+        setAnalysisError(error instanceof Error ? error.message : 'Script Doctor failed.');
+      } finally {
+        setAnalyzing(false);
+      }
+    }, 40);
+    return () => window.clearTimeout(timeout);
+  }, [documentKey]);
+
+  const { report, stats, pagination } = analysis;
   const warningCount = report.checks.filter((check) => check.severity !== 'note').length + report.overusedWords.filter((issue) => issue.severity !== 'note').length;
 
   return (
     <section className="panel writer-assistant-panel">
       <div className="panel-title">
         <span>Script Doctor</span>
-        <Stethoscope size={16} />
+        {analyzing ? <small>Analyzing...</small> : <Stethoscope size={16} />}
       </div>
+      {analysisError && <p className="report-row report-row--warning">Script Doctor could not complete: {analysisError}</p>}
 
       <div className="metric-grid">
         <Metric label={report.grade} value={report.score} />
@@ -96,6 +155,70 @@ export function WriterAssistantPanel() {
       </div>
     </section>
   );
+}
+
+interface DoctorAnalysis {
+  report: ScriptDoctorReport;
+  stats: WritingStats;
+  pagination: ProductionPaginationPlan;
+}
+
+function computeDoctorAnalysis(document: ScriptDocument): DoctorAnalysis {
+  return {
+    report: runScriptDoctor(document, { maxElements: 900, maxSpellingElements: 320 }),
+    stats: computeWritingStats(document),
+    pagination: createProductionPaginationPlan(document.elements, document.settings.pageNumberStart)
+  };
+}
+
+function createPendingAnalysis(document: ScriptDocument): DoctorAnalysis {
+  return {
+    report: {
+      score: 0,
+      grade: 'Needs Pass',
+      summary: ['Script Doctor is warming up. Large scripts analyze in the background so writing stays responsive.'],
+      checks: [],
+      overusedWords: [],
+      dialogue: [],
+      spellingIssueCount: 0,
+      sceneCount: 0,
+      wordCount: 0,
+      analyzedElementCount: 0,
+      totalElementCount: document.elements.length,
+      limited: false
+    },
+    stats: {
+      pages: 0,
+      words: 0,
+      scenes: 0,
+      notes: 0,
+      tags: 0,
+      writingSeconds: 0,
+      pagesAdded: 0,
+      streakDays: 0,
+      characters: [],
+      scenesList: []
+    },
+    pagination: {
+      pages: [],
+      continuedCharacterElementIds: [],
+      moreAfterElementIds: [],
+      lockedPageElementIds: []
+    }
+  };
+}
+
+function leanDoctorDocument(document: ScriptDocument): ScriptDocument {
+  return {
+    ...document,
+    fdxShadow: document.fdxShadow
+      ? {
+          ...document.fdxShadow,
+          originalXml: '',
+          rawRoot: undefined
+        }
+      : undefined
+  };
 }
 
 function Metric({ label, value }: { label: string; value: string | number }) {

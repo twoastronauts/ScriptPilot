@@ -11,10 +11,13 @@ import {
 import { createDraftVersion as buildDraftVersion, createRevisionMemo as buildRevisionMemo } from '@/shared/formattingV2';
 import { estimatePageCount, lineWidthFor, normalizeCharacterName } from '@/shared/screenplay';
 import { computeWritingStats } from '@/shared/stats';
+import type { BackupInfo } from '@/shared/ipc';
 import type {
   Beat,
   CharacterArc,
   CharacterProfile,
+  CollabParticipant,
+  CollabSession,
   ProductionTag,
   ProjectSettings,
   RevisionSet,
@@ -32,7 +35,7 @@ interface SprintBaseline {
   pages: number;
 }
 
-type RightPanel = 'beats' | 'characters' | 'assistant' | 'stats' | 'production' | 'studio' | 'shortcuts' | 'settings';
+type RightPanel = 'beats' | 'characters' | 'assistant' | 'stats' | 'production' | 'studio' | 'shortcuts' | 'collaboration' | 'settings';
 export type BeatBoardMode = 'rail' | 'expanded' | 'fullscreen';
 type WorkspaceView = 'home' | 'editor';
 
@@ -53,11 +56,25 @@ interface WorkspaceState {
   sprintStartedAt?: string;
   sprintBaseline?: SprintBaseline;
   lastWarning?: string;
+  lastSavedAt?: string;
+  lastBackupAt?: string;
+  lastBackupPath?: string;
+  backupDirectory?: string;
+  collabSession?: CollabSession;
+  collabParticipants: CollabParticipant[];
   setDocument: (document: ScriptDocument, paths?: { projectPath?: string; fdxPath?: string }) => void;
+  applyRemoteDocument: (document: ScriptDocument) => void;
   setElements: (elements: ScriptElement[]) => void;
   setSelectedElement: (id?: string) => void;
   setProjectPath: (path?: string) => void;
   setFdxPath: (path?: string) => void;
+  finishProjectSave: (document: ScriptDocument, path?: string) => void;
+  finishFdxSave: (document: ScriptDocument, path?: string) => void;
+  recordBackup: (backup: BackupInfo) => void;
+  setBackupDirectory: (path?: string) => void;
+  setCollabSession: (session?: CollabSession) => void;
+  setCollabStatus: (status: CollabSession['status']) => void;
+  setCollabParticipants: (participants: CollabParticipant[]) => void;
   markClean: () => void;
   setWorkspaceView: (view: WorkspaceView) => void;
   setPanel: (panel: RightPanel) => void;
@@ -71,6 +88,7 @@ interface WorkspaceState {
   setViewMode: (viewMode: ViewMode) => void;
   updateSettings: (patch: Partial<ProjectSettings>) => void;
   updateTitlePage: (patch: Partial<TitlePage>) => void;
+  updateElementStyle: (elementId: string, patch: Partial<TextStyle>) => void;
   updateSelectedElementStyle: (patch: Partial<TextStyle>) => void;
   updateTitlePageStyle: (field: string, patch: Partial<TextStyle>) => void;
   toggleFocusMode: () => void;
@@ -90,13 +108,16 @@ interface WorkspaceState {
   updateCharacter: (characterId: string, patch: Partial<CharacterProfile>) => void;
   updateCharacterArc: (characterId: string, patch: Partial<CharacterArc>) => void;
   renameCharacter: (characterId: string, nextName: string, applyToScript: boolean) => void;
+  setElementType: (elementId: string, type: ScriptElementType) => void;
   setSelectedElementType: (type: ScriptElementType) => void;
   addProductionTagToSelected: (tag: Omit<ProductionTag, 'id'>) => void;
+  addScriptNoteToElement: (elementId: string, text: string) => void;
   addScriptNoteToSelected: (text: string) => void;
   toggleRevisionOnSelected: (color: string) => void;
   setRevisionMode: (enabled: boolean) => void;
   setActiveRevisionSet: (revisionId: string) => void;
   updateRevisionSet: (revisionId: string, patch: Partial<RevisionSet>) => void;
+  markElementRevised: (elementId: string) => void;
   markSelectedRevised: () => void;
   clearSelectedRevision: () => void;
   toggleOmitSelected: () => void;
@@ -121,6 +142,7 @@ function normalizeSettings(settings: ProjectSettings): ProjectSettings {
   const defaults = createDefaultSettings();
   const normalized = { ...defaults, ...settings };
   if (settings.typewriterVolume === undefined && settings.typewriterSounds === false) normalized.typewriterVolume = 0;
+  if (settings.typewriterBellVolume === undefined) normalized.typewriterBellVolume = normalized.typewriterVolume || defaults.typewriterBellVolume;
   return normalized;
 }
 
@@ -367,6 +389,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   navigatorWidth: 286,
   rightRailWidth: 430,
   outlineHeight: 138,
+  collabParticipants: [],
   setDocument: (document, paths) => {
     const normalizedDocument = normalizeDocument(document);
     set({
@@ -374,6 +397,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       projectPath: paths?.projectPath,
       fdxPath: paths?.fdxPath,
       dirty: false,
+      lastSavedAt: undefined,
       selectedElementId: normalizedDocument.elements[0]?.id,
       workspaceView: 'editor',
       showTitlePage: false,
@@ -382,6 +406,18 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       sprintBaseline: undefined
     });
   },
+  applyRemoteDocument: (document) =>
+    set((state) => {
+      const normalizedDocument = normalizeDocument(document);
+      return {
+        document: normalizedDocument,
+        dirty: true,
+        selectedElementId: state.selectedElementId && normalizedDocument.elements.some((element) => element.id === state.selectedElementId)
+          ? state.selectedElementId
+          : normalizedDocument.elements[0]?.id,
+        workspaceView: 'editor'
+      };
+    }),
   setElements: (elements) =>
     set((state) => {
       const document = normalizeDocument(state.document);
@@ -395,6 +431,42 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   setSelectedElement: (id) => set({ selectedElementId: id }),
   setProjectPath: (projectPath) => set({ projectPath }),
   setFdxPath: (fdxPath) => set({ fdxPath }),
+  finishProjectSave: (document, projectPath) =>
+    set((state) => {
+      const normalizedDocument = normalizeDocument(document);
+      return {
+        document: normalizedDocument,
+        projectPath,
+        fdxPath: state.fdxPath,
+        dirty: false,
+        lastSavedAt: new Date().toISOString(),
+        selectedElementId: state.selectedElementId && normalizedDocument.elements.some((element) => element.id === state.selectedElementId)
+          ? state.selectedElementId
+          : normalizedDocument.elements[0]?.id,
+        workspaceView: 'editor'
+      };
+    }),
+  finishFdxSave: (document, fdxPath) =>
+    set((state) => ({
+      document: normalizeDocument(document),
+      fdxPath,
+      projectPath: state.projectPath,
+      dirty: false,
+      lastSavedAt: new Date().toISOString()
+    })),
+  recordBackup: (backup) =>
+    set({
+      lastBackupAt: backup.createdAt,
+      lastBackupPath: backup.path,
+      backupDirectory: backup.directory
+    }),
+  setBackupDirectory: (backupDirectory) => set({ backupDirectory }),
+  setCollabSession: (collabSession) => set({ collabSession, collabParticipants: collabSession ? get().collabParticipants : [] }),
+  setCollabStatus: (status) =>
+    set((state) => ({
+      collabSession: state.collabSession ? { ...state.collabSession, status, endedAt: status === 'ended' ? new Date().toISOString() : state.collabSession.endedAt } : undefined
+    })),
+  setCollabParticipants: (collabParticipants) => set({ collabParticipants }),
   markClean: () => set({ dirty: false }),
   setWorkspaceView: (workspaceView) => set({ workspaceView }),
   setPanel: (activeRightPanel) =>
@@ -466,14 +538,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         dirty: true
       };
     }),
-  updateSelectedElementStyle: (patch) =>
+  updateElementStyle: (elementId, patch) =>
     set((state) => {
-      if (!state.selectedElementId) return state;
+      if (!elementId) return state;
       return {
         document: touch({
           ...state.document,
           elements: state.document.elements.map((element) =>
-            element.id === state.selectedElementId
+            element.id === elementId
               ? { ...element, style: normalizeTextStyle({ ...(element.style ?? {}), ...patch }), updatedAt: new Date().toISOString() }
               : element
           )
@@ -481,6 +553,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         dirty: true
       };
     }),
+  updateSelectedElementStyle: (patch) => {
+    const elementId = get().selectedElementId;
+    if (elementId) get().updateElementStyle(elementId, patch);
+  },
   updateTitlePageStyle: (field, patch) =>
     set((state) => {
       const styles = state.document.titlePage.styles ?? createDefaultTitlePageStyles();
@@ -511,7 +587,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           ...state.document.settings,
           typewriterMode: !state.document.settings.typewriterMode,
           typewriterSounds: !state.document.settings.typewriterMode ? true : state.document.settings.typewriterSounds,
-          typewriterVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterVolume <= 0 ? 0.65 : state.document.settings.typewriterVolume
+          typewriterVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterVolume <= 0 ? 0.65 : state.document.settings.typewriterVolume,
+          typewriterBellVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterBellVolume <= 0 ? 0.8 : state.document.settings.typewriterBellVolume
         }
       }),
       dirty: true
@@ -523,7 +600,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         settings: {
           ...state.document.settings,
           typewriterSounds: !state.document.settings.typewriterSounds,
-          typewriterVolume: state.document.settings.typewriterSounds ? 0 : Math.max(0.55, state.document.settings.typewriterVolume)
+          typewriterVolume: state.document.settings.typewriterSounds ? 0 : Math.max(0.55, state.document.settings.typewriterVolume),
+          typewriterBellVolume: state.document.settings.typewriterSounds ? 0 : Math.max(0.65, state.document.settings.typewriterBellVolume)
         }
       }),
       dirty: true
@@ -762,19 +840,23 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         dirty: true
       };
     }),
-  setSelectedElementType: (type) =>
+  setElementType: (elementId, type) =>
     set((state) => {
-      if (!state.selectedElementId) return state;
+      if (!elementId) return state;
       return {
         document: touch({
           ...state.document,
           elements: state.document.elements.map((element) =>
-            element.id === state.selectedElementId ? { ...element, type, updatedAt: new Date().toISOString() } : element
+            element.id === elementId ? { ...element, type, updatedAt: new Date().toISOString() } : element
           )
         }),
         dirty: true
       };
     }),
+  setSelectedElementType: (type) => {
+    const elementId = get().selectedElementId;
+    if (elementId) get().setElementType(elementId, type);
+  },
   addProductionTagToSelected: (tag) =>
     set((state) => {
       if (!state.selectedElementId) return state;
@@ -790,14 +872,14 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         dirty: true
       };
     }),
-  addScriptNoteToSelected: (text) =>
+  addScriptNoteToElement: (elementId, text) =>
     set((state) => {
-      if (!state.selectedElementId || !text.trim()) return state;
+      if (!elementId || !text.trim()) return state;
       return {
         document: touch({
           ...state.document,
           elements: state.document.elements.map((element) =>
-            element.id === state.selectedElementId
+            element.id === elementId
               ? {
                   ...element,
                   notes: [
@@ -812,6 +894,10 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         dirty: true
       };
     }),
+  addScriptNoteToSelected: (text) => {
+    const elementId = get().selectedElementId;
+    if (elementId) get().addScriptNoteToElement(elementId, text);
+  },
   toggleRevisionOnSelected: (color) =>
     set((state) => {
       if (!state.selectedElementId) return state;
@@ -865,20 +951,24 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         dirty: true
       };
     }),
-  markSelectedRevised: () =>
+  markElementRevised: (elementId) =>
     set((state) => {
-      if (!state.selectedElementId) return state;
+      if (!elementId) return state;
       const document = normalizeDocument(state.document);
       const revision = getActiveRevision(document.revisions);
       if (!revision) return state;
       return {
         document: touch({
           ...document,
-          elements: document.elements.map((element) => (element.id === state.selectedElementId ? markElementRevision(element, revision) : element))
+          elements: document.elements.map((element) => (element.id === elementId ? markElementRevision(element, revision) : element))
         }),
         dirty: true
       };
     }),
+  markSelectedRevised: () => {
+    const elementId = get().selectedElementId;
+    if (elementId) get().markElementRevised(elementId);
+  },
   clearSelectedRevision: () =>
     set((state) => {
       if (!state.selectedElementId) return state;

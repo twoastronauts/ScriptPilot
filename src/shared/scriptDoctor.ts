@@ -25,6 +25,14 @@ export interface ScriptDoctorReport {
   spellingIssueCount: number;
   sceneCount: number;
   wordCount: number;
+  analyzedElementCount: number;
+  totalElementCount: number;
+  limited: boolean;
+}
+
+export interface ScriptDoctorOptions {
+  maxElements?: number;
+  maxSpellingElements?: number;
 }
 
 const STOP_WORDS = new Set([
@@ -81,13 +89,18 @@ const WEAK_SCREENPLAY_WORDS = new Map<string, string>([
   ['quickly', 'If speed matters, use a sharper verb.']
 ]);
 
-export function runScriptDoctor(document: ScriptDocument): ScriptDoctorReport {
-  const checks = analyzeScript(document);
-  const overusedWords = analyzeOverusedWords(document);
-  const dialogue = analyzeDialogue(document);
-  const scenes = collectProductionScenes(document);
-  const spellingIssueCount = document.elements.reduce((sum, element) => sum + findSpellingIssues(element.text, 20).length, 0);
-  const wordCount = countWords(document.elements.map((element) => element.text).join(' '));
+export function runScriptDoctor(document: ScriptDocument, options: ScriptDoctorOptions = {}): ScriptDoctorReport {
+  const analysisDocument = limitDocumentForDoctor(document, options.maxElements);
+  const limited = analysisDocument.elements.length < document.elements.length;
+  const checks = analyzeScript(analysisDocument);
+  const overusedWords = analyzeOverusedWords(analysisDocument);
+  const dialogue = analyzeDialogue(analysisDocument);
+  const scenes = collectProductionScenes(analysisDocument);
+  const spellingElements = analysisDocument.elements
+    .filter((element) => element.type !== 'page-break')
+    .slice(0, options.maxSpellingElements ?? analysisDocument.elements.length);
+  const spellingIssueCount = spellingElements.reduce((sum, element) => sum + findSpellingIssues(element.text, 12).length, 0);
+  const wordCount = countWords(analysisDocument.elements.map((element) => element.text).join(' '));
 
   const strong = checks.filter((check) => check.severity === 'strong').length;
   const warnings = checks.filter((check) => check.severity === 'warning').length + overusedWords.filter((issue) => issue.severity !== 'note').length;
@@ -97,13 +110,25 @@ export function runScriptDoctor(document: ScriptDocument): ScriptDoctorReport {
   return {
     score,
     grade,
-    summary: buildSummary({ checks, overusedWords, spellingIssueCount, dialogue, sceneCount: scenes.length }),
+    summary: buildSummary({
+      checks,
+      overusedWords,
+      spellingIssueCount,
+      dialogue,
+      sceneCount: scenes.length,
+      limited,
+      analyzedElementCount: analysisDocument.elements.length,
+      totalElementCount: document.elements.length
+    }),
     checks,
     overusedWords,
     dialogue,
     spellingIssueCount,
     sceneCount: scenes.length,
-    wordCount
+    wordCount,
+    analyzedElementCount: analysisDocument.elements.length,
+    totalElementCount: document.elements.length,
+    limited
   };
 }
 
@@ -156,8 +181,14 @@ function buildSummary(input: {
   spellingIssueCount: number;
   dialogue: DialogueAnalysis[];
   sceneCount: number;
+  limited?: boolean;
+  analyzedElementCount?: number;
+  totalElementCount?: number;
 }): string[] {
   const summary: string[] = [];
+  if (input.limited) {
+    summary.push(`Large script mode: analyzed ${input.analyzedElementCount} of ${input.totalElementCount} elements to keep the editor responsive.`);
+  }
   const strong = input.checks.filter((check) => check.severity === 'strong');
   const warnings = input.checks.filter((check) => check.severity === 'warning');
   if (!input.sceneCount) summary.push('Add scene headings first so Script Doctor can evaluate structure, pacing, and scene work.');
@@ -169,6 +200,21 @@ function buildSummary(input: {
   if (dialogueWarning) summary.push(`Dialogue pass: ${dialogueWarning.characterName} may need a rhythm polish.`);
   if (!summary.length) summary.push('No major doctor notes. Keep writing, then run another pass after the next scene turn.');
   return summary.slice(0, 4);
+}
+
+function limitDocumentForDoctor(document: ScriptDocument, maxElements?: number): ScriptDocument {
+  if (!maxElements || document.elements.length <= maxElements) return document;
+  return {
+    ...document,
+    elements: document.elements.slice(0, maxElements),
+    fdxShadow: document.fdxShadow
+      ? {
+          ...document.fdxShadow,
+          originalXml: '',
+          rawRoot: undefined
+        }
+      : undefined
+  };
 }
 
 function severityRank(severity: OverusedWordIssue['severity']): number {

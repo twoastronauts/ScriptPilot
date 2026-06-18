@@ -98,4 +98,17 @@ describe('V02 writer assistant', () => {
     expect(report.summary.some((line) => line.startsWith('Language pass:'))).toBe(true);
     expect(synonymGroups.flatMap((group) => group.words)).toContain('sprint');
   });
+
+  it('keeps Script Doctor responsive by limiting very large analysis passes', () => {
+    const document = createDocumentFromPlainText(
+      'Large FDX',
+      ['INT. ROOM - NIGHT', ...Array.from({ length: 120 }, (_, index) => `Mara just looks at the door ${index}.`)].join('\n')
+    );
+    const report = runScriptDoctor(document, { maxElements: 24, maxSpellingElements: 12 });
+
+    expect(report.limited).toBe(true);
+    expect(report.analyzedElementCount).toBe(24);
+    expect(report.totalElementCount).toBe(document.elements.length);
+    expect(report.summary[0]).toContain('Large script mode');
+  });
 });

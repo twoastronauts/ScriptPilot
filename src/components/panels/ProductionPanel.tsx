@@ -27,6 +27,18 @@ export function ProductionPanel() {
   const [category, setCategory] = useState<ProductionTag['category']>('prop');
   const [note, setNote] = useState('');
   const reports = useMemo(() => buildProductionReports(document), [document]);
+  const scriptNotes = useMemo(
+    () =>
+      document.elements.flatMap((element) =>
+        element.notes.map((scriptNote) => ({
+          ...scriptNote,
+          elementId: element.id,
+          elementType: element.type,
+          lineText: element.text
+        }))
+      ),
+    [document.elements]
+  );
 
   function addTag() {
     if (!label.trim()) return;
@@ -63,6 +75,34 @@ export function ProductionPanel() {
         <button title="Add note" onClick={addNote}>
           <Plus size={15} />
         </button>
+      </div>
+
+      <div className="note-list">
+        <h3>Selected line notes</h3>
+        {selected?.notes.length ? (
+          selected.notes.map((scriptNote) => (
+            <article key={scriptNote.id} className="note-row" style={{ '--note-color': scriptNote.color } as React.CSSProperties}>
+              <strong>{scriptNote.text}</strong>
+              <small>{selected.type}</small>
+            </article>
+          ))
+        ) : (
+          <p className="empty-copy">No notes on the selected line.</p>
+        )}
+
+        <h3>All script notes</h3>
+        {scriptNotes.length ? (
+          scriptNotes.map((scriptNote) => (
+            <article key={scriptNote.id} className="note-row" style={{ '--note-color': scriptNote.color } as React.CSSProperties}>
+              <strong>{scriptNote.text}</strong>
+              <small>
+                {scriptNote.elementType} - {scriptNote.lineText || 'Blank line'}
+              </small>
+            </article>
+          ))
+        ) : (
+          <p className="empty-copy">No script notes yet.</p>
+        )}
       </div>
 
       <div className="revision-card">

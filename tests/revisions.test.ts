@@ -37,4 +37,24 @@ describe('revision workflow', () => {
     expect(useWorkspace.getState().document.elements[2].revisionSetId).toBeUndefined();
     expect(useWorkspace.getState().document.elements[2].revisionMark).toBeUndefined();
   });
+
+  it('can target notes, style, type, and revision changes without relying on current selection timing', () => {
+    const document = createDocumentFromPlainText('Context Actions', 'INT. ROOM - NIGHT\nThe lamp flickers.');
+    useWorkspace.getState().setDocument(document);
+    useWorkspace.getState().setSelectedElement(undefined);
+
+    const actionLineId = document.elements[1].id;
+    useWorkspace.getState().addScriptNoteToElement(actionLineId, 'Track this image.');
+    useWorkspace.getState().updateElementStyle(actionLineId, { bold: true, backgroundColor: '#ffe08a' });
+    useWorkspace.getState().setElementType(actionLineId, 'shot');
+    useWorkspace.getState().markElementRevised(actionLineId);
+
+    const updated = useWorkspace.getState().document.elements.find((element) => element.id === actionLineId);
+
+    expect(updated?.notes[0]?.text).toBe('Track this image.');
+    expect(updated?.style?.bold).toBe(true);
+    expect(updated?.style?.backgroundColor).toBe('#ffe08a');
+    expect(updated?.type).toBe('shot');
+    expect(updated?.revisionMark).toBe('*');
+  });
 });

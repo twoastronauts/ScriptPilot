@@ -7,3 +7,8 @@ declare global {
     screenwriter?: ScreenwriterApi;
   }
 }
+
+declare module '*.mp3' {
+  const src: string;
+  export default src;
+}

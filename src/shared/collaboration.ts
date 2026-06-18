@@ -3,15 +3,32 @@ import type { CollabProvider, CollabStatus } from './adapters';
 import type { ScriptDocument } from './types';
 
 const DOCUMENT_KEY = 'script-document';
+const SNAPSHOT_KEY = 'snapshot';
 
 export function documentToYDoc(document: ScriptDocument): Y.Doc {
   const ydoc = new Y.Doc();
-  ydoc.getMap(DOCUMENT_KEY).set('snapshot', document);
+  writeDocumentSnapshot(ydoc, document);
   return ydoc;
 }
 
 export function yDocToDocument(ydoc: Y.Doc, fallback: ScriptDocument): ScriptDocument {
-  const snapshot = ydoc.getMap(DOCUMENT_KEY).get('snapshot');
+  const snapshot = ydoc.getMap(DOCUMENT_KEY).get(SNAPSHOT_KEY);
+  if (isScriptDocument(snapshot)) return snapshot;
+  return fallback;
+}
+
+export function documentMap(ydoc: Y.Doc): Y.Map<unknown> {
+  return ydoc.getMap(DOCUMENT_KEY);
+}
+
+export function writeDocumentSnapshot(ydoc: Y.Doc, document: ScriptDocument, origin?: unknown): void {
+  ydoc.transact(() => {
+    documentMap(ydoc).set(SNAPSHOT_KEY, document);
+  }, origin);
+}
+
+export function readDocumentSnapshot(ydoc: Y.Doc, fallback?: ScriptDocument): ScriptDocument | undefined {
+  const snapshot = documentMap(ydoc).get(SNAPSHOT_KEY);
   if (isScriptDocument(snapshot)) return snapshot;
   return fallback;
 }
@@ -64,6 +81,6 @@ export class LocalFirstCollabProvider implements CollabProvider {
   }
 }
 
-function isScriptDocument(value: unknown): value is ScriptDocument {
+export function isScriptDocument(value: unknown): value is ScriptDocument {
   return typeof value === 'object' && value !== null && 'elements' in value && 'settings' in value;
 }

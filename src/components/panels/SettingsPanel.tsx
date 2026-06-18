@@ -1,7 +1,59 @@
+import { useEffect } from 'react';
 import { useWorkspace } from '@/store/workspace';
+import { patchThemeColor, THEME_COLOR_CONTROLS } from '@/shared/themeColors';
+import type { ThemeColorSettings } from '@/shared/types';
+
+const colorGroups = ['Workspace', 'Writing Page', 'Controls', 'Accents'] as const;
 
 export function SettingsPanel() {
-  const { document, setViewMode, toggleFocusMode, toggleTypewriterMode, updateSettings } = useWorkspace();
+  const {
+    document,
+    projectPath,
+    fdxPath,
+    lastSavedAt,
+    lastBackupAt,
+    lastBackupPath,
+    backupDirectory,
+    setDocument,
+    setViewMode,
+    toggleFocusMode,
+    toggleTypewriterMode,
+    updateSettings,
+    recordBackup,
+    setBackupDirectory,
+    setWarning
+  } = useWorkspace();
+  const themeColors = document.settings.themeColors ?? {};
+  const activePath = projectPath ?? fdxPath;
+
+  useEffect(() => {
+    window.screenwriter?.getBackupDirectory().then((result) => {
+      if (result && !result.canceled) setBackupDirectory(result.data.path);
+    });
+  }, [setBackupDirectory]);
+
+  function updateThemeColor(key: keyof ThemeColorSettings, value: string) {
+    updateSettings({ themeColors: patchThemeColor(themeColors, key, value) });
+  }
+
+  async function createBackup() {
+    const result = await window.screenwriter?.createBackup(document, activePath);
+    if (!result || result.canceled) return;
+    recordBackup(result.data);
+    setWarning(`Backup created: ${result.data.path}`);
+  }
+
+  async function openBackupDirectory() {
+    const result = await window.screenwriter?.openBackupDirectory();
+    if (result && !result.canceled) setBackupDirectory(result.data.path);
+  }
+
+  async function restoreBackup() {
+    const result = await window.screenwriter?.restoreBackup();
+    if (!result || result.canceled) return;
+    setDocument(result.data, { projectPath: result.path });
+    setWarning(`Restored backup: ${result.path}`);
+  }
 
   return (
     <section className="panel">
@@ -18,6 +70,75 @@ export function SettingsPanel() {
             <option value="midnight">Midnight</option>
           </select>
         </label>
+        <div className="settings-section-title">
+          <strong>Color Studio</strong>
+          <button type="button" title="Reset color customization" onClick={() => updateSettings({ themeColors: {} })}>
+            Reset
+          </button>
+        </div>
+        {colorGroups.map((group) => (
+          <fieldset key={group} className="color-studio-group">
+            <legend>{group}</legend>
+            <div className="color-studio-grid">
+              {THEME_COLOR_CONTROLS.filter((control) => control.group === group).map((control) => {
+                const value = themeColors[control.key] ?? control.fallback;
+                return (
+                  <label key={control.key} className="color-studio-control">
+                    <span>{control.label}</span>
+                    <input aria-label={control.label} type="color" value={value} onChange={(event) => updateThemeColor(control.key, event.target.value)} />
+                    <code>{value}</code>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+        ))}
+        <div className="settings-section-title">
+          <strong>Files</strong>
+          <button type="button" title="Open backup folder" onClick={openBackupDirectory}>
+            Open backups
+          </button>
+        </div>
+        <label>
+          <span>Project path</span>
+          <input value={activePath ?? 'Not saved yet'} readOnly />
+        </label>
+        <label>
+          <span>Backup folder</span>
+          <input value={backupDirectory ?? 'Loading backup folder...'} readOnly />
+        </label>
+        <label>
+          <span>Last saved</span>
+          <input value={lastSavedAt ? formatDateTime(lastSavedAt) : 'Not saved in this session'} readOnly />
+        </label>
+        <label>
+          <span>Last backup</span>
+          <input value={lastBackupAt ? formatDateTime(lastBackupAt) : 'No backup in this session'} readOnly />
+        </label>
+        {lastBackupPath && (
+          <label>
+            <span>Backup file</span>
+            <input value={lastBackupPath} readOnly />
+          </label>
+        )}
+        <label>
+          <span>Autosave backups</span>
+          <input type="checkbox" checked={document.settings.autosave} onChange={(event) => updateSettings({ autosave: event.target.checked })} />
+        </label>
+        <label>
+          <span>Backup interval</span>
+          <input
+            type="number"
+            min={1}
+            max={120}
+            value={document.settings.backupIntervalMinutes}
+            onChange={(event) => updateSettings({ backupIntervalMinutes: Math.max(1, Number(event.target.value) || 5) })}
+          />
+        </label>
+        <div className="settings-actions">
+          <button type="button" onClick={createBackup}>Create backup</button>
+          <button type="button" onClick={restoreBackup}>Restore backup</button>
+        </div>
         <label>
           <span>Typewriter mode</span>
           <input type="checkbox" checked={document.settings.typewriterMode} onChange={toggleTypewriterMode} />
@@ -31,6 +152,17 @@ export function SettingsPanel() {
             step={0.05}
             value={document.settings.typewriterVolume}
             onChange={(event) => updateSettings({ typewriterVolume: Number(event.target.value), typewriterSounds: Number(event.target.value) > 0 })}
+          />
+        </label>
+        <label>
+          <span>Return bell volume</span>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={document.settings.typewriterBellVolume}
+            onChange={(event) => updateSettings({ typewriterBellVolume: Number(event.target.value), typewriterSounds: Number(event.target.value) > 0 || document.settings.typewriterVolume > 0 })}
           />
         </label>
         <label>
@@ -129,14 +261,16 @@ export function SettingsPanel() {
           </select>
         </label>
         <label>
-          <span>Autosave</span>
-          <input type="checkbox" checked={document.settings.autosave} onChange={(event) => updateSettings({ autosave: event.target.checked })} />
-        </label>
-        <label>
           <span>Collaboration endpoint</span>
           <input value={document.settings.collaborationUrl ?? 'Local only'} readOnly />
         </label>
       </div>
     </section>
   );
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Unknown';
+  return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(date);
 }

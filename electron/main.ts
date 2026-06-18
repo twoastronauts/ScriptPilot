@@ -1,25 +1,56 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import * as Y from 'yjs';
+import { Server } from '@hocuspocus/server';
 import { importFdx, exportFdx } from '../src/shared/fdx';
 import { createDocumentFromPlainText } from '../src/shared/defaultDocument';
 import { createPrintableHtml } from '../src/shared/pdf';
 import { serializeProject, parseProject } from '../src/shared/projectFile';
 import { computeWritingStats } from '../src/shared/stats';
-import type { ExportPdfOptions, FileResult, ImportedPdfResult, RecentFilesResult } from '../src/shared/ipc';
-import type { RecentFile, ScriptDocument } from '../src/shared/types';
+import { backupBaseName, documentWithTitleFromSavePath } from '../src/shared/fileSafety';
+import { documentToYDoc } from '../src/shared/collaboration';
+import type {
+  BackupDirectoryResult,
+  BackupInfo,
+  ClipboardResult,
+  CollabHostResult,
+  CollabInviteResult,
+  CollabJoinResult,
+  CreateCollabInviteOptions,
+  ExportPdfOptions,
+  FileResult,
+  ImportedPdfResult,
+  JoinCollabRoomOptions,
+  RecentFilesResult,
+  StartCollabHostOptions,
+  WindowTitlePayload
+} from '../src/shared/ipc';
+import type { CollabHostStatus, CollabInvite, CollabPermission, CollabSession, RecentFile, ScriptDocument } from '../src/shared/types';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development';
 const APP_DISPLAY_NAME = 'Script Pilot V02';
 const PROJECT_EXTENSIONS = ['spx', 'spx2', 'astrostory', 'json'];
+const COLLAB_HOST_ADDRESS = '0.0.0.0';
 
 app.setName(APP_DISPLAY_NAME);
 app.setPath('userData', path.join(app.getPath('appData'), APP_DISPLAY_NAME));
 
 let mainWindow: BrowserWindow | null = null;
+
+interface CollabHostRecord {
+  server: Server;
+  status: CollabHostStatus;
+  tokens: Map<string, CollabPermission>;
+  storagePath: string;
+}
+
+const collabHosts = new Map<string, CollabHostRecord>();
 
 function createMainWindow(): void {
   mainWindow = new BrowserWindow({
@@ -47,7 +78,16 @@ function createMainWindow(): void {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
+  installMediaPermissions(mainWindow);
   installSpellcheckMenu(mainWindow);
+}
+
+function installMediaPermissions(window: BrowserWindow): void {
+  const session = window.webContents.session;
+  session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(permission === 'media');
+  });
+  session.setPermissionCheckHandler((_webContents, permission) => permission === 'media');
 }
 
 function installSpellcheckMenu(window: BrowserWindow): void {
@@ -90,10 +130,97 @@ function canceled<T>(fallback: T): FileResult<T> {
   return { canceled: true, data: fallback };
 }
 
+function windowTitle(payload: WindowTitlePayload): string {
+  const title = payload.title.trim() || 'Untitled Script';
+  return `${APP_DISPLAY_NAME} - ${title}${payload.dirty ? ' *' : ''}`;
+}
+
+function setMainWindowTitle(payload: WindowTitlePayload): void {
+  mainWindow?.setTitle(windowTitle(payload));
+}
+
 async function ensureBackupsDir(): Promise<string> {
   const dir = path.join(app.getPath('userData'), 'backups');
   await mkdir(dir, { recursive: true });
   return dir;
+}
+
+async function ensureCollabDir(): Promise<string> {
+  const dir = path.join(app.getPath('userData'), 'collab-rooms');
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
+function getLanAddress(): string {
+  const interfaces = networkInterfaces();
+  for (const entries of Object.values(interfaces)) {
+    for (const entry of entries ?? []) {
+      if (entry.family === 'IPv4' && !entry.internal) return entry.address;
+    }
+  }
+  return '127.0.0.1';
+}
+
+function createCollabToken(): string {
+  return randomUUID().replace(/-/g, '');
+}
+
+function createInvite(status: CollabHostStatus, token: string, permission: CollabPermission): CollabInvite {
+  const appUrl = `scriptpilot://collab/join?host=${encodeURIComponent(status.host)}&port=${status.port}&room=${encodeURIComponent(status.roomId)}&token=${encodeURIComponent(token)}&permission=${permission}`;
+  const manualCode = JSON.stringify({
+    host: status.host,
+    port: status.port,
+    roomId: status.roomId,
+    roomName: status.roomName,
+    token,
+    permission
+  });
+  return {
+    roomId: status.roomId,
+    roomName: status.roomName,
+    url: status.url,
+    host: status.host,
+    port: status.port,
+    token,
+    permission,
+    appUrl,
+    manualCode
+  };
+}
+
+function parseInvite(invite: string | CollabInvite): CollabInvite {
+  if (typeof invite !== 'string') return invite;
+  const trimmed = invite.trim();
+  if (trimmed.startsWith('scriptpilot://')) {
+    const parsed = new URL(trimmed);
+    const host = parsed.searchParams.get('host') || '127.0.0.1';
+    const port = Number(parsed.searchParams.get('port') || '0');
+    const roomId = parsed.searchParams.get('room') || '';
+    const token = parsed.searchParams.get('token') || '';
+    const permission = (parsed.searchParams.get('permission') || 'edit') as CollabPermission;
+    const roomName = parsed.searchParams.get('name') || roomId;
+    const url = `ws://${host}:${port}`;
+    return { roomId, roomName, url, host, port, token, permission, appUrl: trimmed, manualCode: trimmed };
+  }
+
+  const parsed = JSON.parse(trimmed) as Partial<CollabInvite> & { room?: string };
+  const roomId = parsed.roomId ?? parsed.room ?? '';
+  const host = parsed.host ?? '127.0.0.1';
+  const port = Number(parsed.port ?? 0);
+  const url = parsed.url ?? `ws://${host}:${port}`;
+  const permission = (parsed.permission ?? 'edit') as CollabPermission;
+  const token = parsed.token ?? '';
+  return {
+    roomId,
+    roomName: parsed.roomName ?? roomId,
+    url,
+    host,
+    port,
+    token,
+    permission,
+    appUrl: parsed.appUrl ?? `scriptpilot://collab/join?host=${encodeURIComponent(host)}&port=${port}&room=${encodeURIComponent(roomId)}&token=${encodeURIComponent(token)}&permission=${permission}`,
+    manualCode: trimmed
+  };
 }
 
 function recentFilesPath(): string {
@@ -175,6 +302,7 @@ ipcMain.handle('file:open-project', async (): Promise<FileResult<ScriptDocument>
 
 ipcMain.handle('file:save-project', async (_event, document: ScriptDocument, existingPath?: string): Promise<FileResult<ScriptDocument>> => {
   let filePath = existingPath;
+  const firstSave = !filePath;
   if (!filePath) {
     const result = await dialog.showSaveDialog({
       title: 'Save Script Pilot V02 project',
@@ -185,9 +313,11 @@ ipcMain.handle('file:save-project', async (_event, document: ScriptDocument, exi
     filePath = result.filePath;
   }
 
-  await writeFile(filePath, serializeProject(document), 'utf8');
-  await rememberRecentFile(filePath, document, 'project', 'save');
-  return { canceled: false, path: filePath, data: document };
+  const savedDocument = firstSave ? documentWithTitleFromSavePath(document, filePath) : document;
+  await writeFile(filePath, serializeProject(savedDocument), 'utf8');
+  await rememberRecentFile(filePath, savedDocument, 'project', 'save');
+  setMainWindowTitle({ title: savedDocument.title, dirty: false });
+  return { canceled: false, path: filePath, data: savedDocument };
 });
 
 ipcMain.handle('file:open-fdx', async (): Promise<FileResult<ScriptDocument>> => {
@@ -219,6 +349,7 @@ ipcMain.handle('file:save-fdx', async (_event, document: ScriptDocument, existin
 
   await writeFile(filePath, exportFdx(document), 'utf8');
   await rememberRecentFile(filePath, document, 'fdx', 'save');
+  setMainWindowTitle({ title: document.title, dirty: false });
   return { canceled: false, path: filePath, data: document };
 });
 
@@ -303,13 +434,25 @@ ipcMain.handle('file:open-recent', async (_event, filePath: string): Promise<Fil
   return openFilePath(filePath);
 });
 
-ipcMain.handle('file:create-backup', async (_event, document: ScriptDocument, currentPath?: string): Promise<FileResult<null>> => {
+ipcMain.handle('file:get-backup-directory', async (): Promise<FileResult<BackupDirectoryResult>> => {
   const dir = await ensureBackupsDir();
-  const baseName = currentPath ? path.basename(currentPath, path.extname(currentPath)) : document.title || 'Untitled';
+  return { canceled: false, path: dir, data: { path: dir } };
+});
+
+ipcMain.handle('file:open-backup-directory', async (): Promise<FileResult<BackupDirectoryResult>> => {
+  const dir = await ensureBackupsDir();
+  await shell.openPath(dir);
+  return { canceled: false, path: dir, data: { path: dir } };
+});
+
+ipcMain.handle('file:create-backup', async (_event, document: ScriptDocument, currentPath?: string): Promise<FileResult<BackupInfo>> => {
+  const dir = await ensureBackupsDir();
+  const baseName = backupBaseName(document, currentPath);
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const createdAt = new Date().toISOString();
   const backupPath = path.join(dir, `${baseName}.${stamp}.spx`);
   await writeFile(backupPath, serializeProject(document), 'utf8');
-  return { canceled: false, path: backupPath, data: null };
+  return { canceled: false, path: backupPath, data: { path: backupPath, directory: dir, createdAt } };
 });
 
 ipcMain.handle('file:restore-backup', async (): Promise<FileResult<ScriptDocument>> => {
@@ -323,4 +466,113 @@ ipcMain.handle('file:restore-backup', async (): Promise<FileResult<ScriptDocumen
   if (result.canceled || !result.filePaths[0]) return canceled(createDocumentFromPlainText('Untitled', ''));
   const text = await readFile(result.filePaths[0], 'utf8');
   return { canceled: false, path: result.filePaths[0], data: parseProject(text) };
+});
+
+ipcMain.handle('window:set-title', async (_event, payload: WindowTitlePayload): Promise<void> => {
+  setMainWindowTitle(payload);
+});
+
+ipcMain.handle('clipboard:copy', async (_event, text: string): Promise<FileResult<ClipboardResult>> => {
+  clipboard.writeText(text);
+  return { canceled: false, data: { text: clipboard.readText() } };
+});
+
+ipcMain.handle('collab:start-host', async (_event, document: ScriptDocument, options?: StartCollabHostOptions): Promise<CollabHostResult> => {
+  for (const [roomId, host] of collabHosts) {
+    await host.server.destroy();
+    host.status.status = 'ended';
+    host.status.endedAt = new Date().toISOString();
+    collabHosts.delete(roomId);
+  }
+
+  const roomId = randomUUID();
+  const hostName = getLanAddress();
+  const token = createCollabToken();
+  const tokens = new Map<string, CollabPermission>([[token, 'host']]);
+  const collabDir = await ensureCollabDir();
+  const storagePath = path.join(collabDir, `${roomId}.bin`);
+  const seedUpdate = Y.encodeStateAsUpdate(documentToYDoc(document));
+
+  const server = new Server({
+    port: 0,
+    address: COLLAB_HOST_ADDRESS,
+    quiet: true,
+    async onAuthenticate({ token: receivedToken }) {
+      const permission = tokens.get(receivedToken);
+      if (!permission) throw new Error('This Script Pilot collaboration invite is no longer valid.');
+      return { permission, userName: options?.userName ?? 'Host' };
+    },
+    async onLoadDocument() {
+      const ydoc = new Y.Doc();
+      if (existsSync(storagePath)) {
+        Y.applyUpdate(ydoc, await readFile(storagePath));
+      } else {
+        Y.applyUpdate(ydoc, seedUpdate);
+      }
+      return ydoc;
+    },
+    async onStoreDocument({ document }) {
+      await mkdir(path.dirname(storagePath), { recursive: true });
+      await writeFile(storagePath, Y.encodeStateAsUpdate(document));
+    }
+  });
+
+  await server.listen(0);
+  const address = server.address;
+  const port = typeof address === 'string' ? 0 : address.port;
+  const statusBase: CollabHostStatus = {
+    roomId,
+    roomName: document.title || 'Untitled Script',
+    url: `ws://${hostName}:${port}`,
+    host: hostName,
+    port,
+    startedAt: new Date().toISOString(),
+    status: 'hosting',
+    isHost: true,
+    invite: {} as CollabInvite
+  };
+  statusBase.invite = createInvite(statusBase, token, 'host');
+
+  collabHosts.set(roomId, { server, status: statusBase, tokens, storagePath });
+  return { canceled: false, path: statusBase.invite.appUrl, data: statusBase };
+});
+
+ipcMain.handle('collab:stop-host', async (_event, roomId: string): Promise<FileResult<null>> => {
+  const host = collabHosts.get(roomId);
+  if (!host) return { canceled: false, data: null };
+  await host.server.destroy();
+  host.status.status = 'ended';
+  host.status.endedAt = new Date().toISOString();
+  collabHosts.delete(roomId);
+  return { canceled: false, data: null };
+});
+
+ipcMain.handle('collab:create-invite', async (_event, options: CreateCollabInviteOptions): Promise<CollabInviteResult> => {
+  const host = collabHosts.get(options.roomId);
+  if (!host) return canceled({} as CollabInvite);
+  const token = createCollabToken();
+  host.tokens.set(token, options.permission);
+  const invite = createInvite(host.status, token, options.permission);
+  return { canceled: false, path: invite.appUrl, data: invite };
+});
+
+ipcMain.handle('collab:join-room', async (_event, options: JoinCollabRoomOptions): Promise<CollabJoinResult> => {
+  const invite = parseInvite(options.invite);
+  const session: CollabSession = {
+    roomId: invite.roomId,
+    roomName: invite.roomName || invite.roomId,
+    url: invite.url,
+    token: invite.token,
+    permission: invite.permission,
+    isHost: false,
+    status: 'joining',
+    invite
+  };
+  return { canceled: false, path: invite.appUrl, data: session };
+});
+
+ipcMain.handle('collab:get-status', async (): Promise<CollabHostResult | FileResult<null>> => {
+  const host = Array.from(collabHosts.values())[0];
+  if (!host) return { canceled: false, data: null };
+  return { canceled: false, path: host.status.invite.appUrl, data: host.status };
 });

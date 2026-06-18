@@ -186,7 +186,8 @@ export function BeatBoard() {
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
+      const mimeType = preferredAudioMimeType();
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
       audioChunksRef.current = [];
       audioStreamRef.current = stream;
       recorderRef.current = recorder;
@@ -194,7 +195,7 @@ export function BeatBoard() {
         if (event.data.size > 0) audioChunksRef.current.push(event.data);
       });
       recorder.addEventListener('stop', () => {
-        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || mimeType || 'audio/webm' });
         readAudio(blob, (audioDataUrl) => {
           updateBeat({
             ...beat,
@@ -213,8 +214,11 @@ export function BeatBoard() {
       recorder.start();
       setRecordingBeatId(beat.id);
       setRecordingSeconds(0);
-    } catch {
-      setWarning('Microphone permission was blocked or unavailable.');
+    } catch (error) {
+      audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+      audioStreamRef.current = null;
+      recorderRef.current = null;
+      setWarning(error instanceof Error ? `Microphone recording could not start: ${error.message}` : 'Microphone permission was blocked or unavailable.');
       setRecordingBeatId(null);
       setRecordingSeconds(0);
     }
@@ -631,6 +635,18 @@ function readAudio(blob: Blob, callback: (audioDataUrl: string) => void): void {
     if (typeof reader.result === 'string') callback(reader.result);
   });
   reader.readAsDataURL(blob);
+}
+
+function preferredAudioMimeType(): string | undefined {
+  if (typeof MediaRecorder === 'undefined' || typeof MediaRecorder.isTypeSupported !== 'function') return undefined;
+  return [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/mp4',
+    'audio/aac',
+    'audio/ogg;codecs=opus'
+  ].find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
 }
 
 function linkPath(x1: number, y1: number, x2: number, y2: number): string {
