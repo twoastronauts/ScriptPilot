@@ -5,8 +5,17 @@ import type { TextStyle } from '@/shared/types';
 const fontOptions = [
   { label: 'Courier Prime', value: 'Courier Prime, Courier New, monospace' },
   { label: 'Courier New', value: 'Courier New, Courier, monospace' },
+  { label: 'Courier', value: 'Courier, Courier New, monospace' },
   { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
-  { label: 'Times', value: 'Times New Roman, Times, serif' }
+  { label: 'Helvetica', value: 'Helvetica, Arial, sans-serif' },
+  { label: 'Times', value: 'Times New Roman, Times, serif' },
+  { label: 'Georgia', value: 'Georgia, Times New Roman, serif' },
+  { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
+  { label: 'Trebuchet', value: 'Trebuchet MS, Arial, sans-serif' },
+  { label: 'Segoe UI', value: 'Segoe UI, Arial, sans-serif' },
+  { label: 'System Sans', value: 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif' },
+  { label: 'System Serif', value: 'ui-serif, Georgia, Cambria, Times New Roman, Times, serif' },
+  { label: 'System Mono', value: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace' }
 ];
 
 const sizeOptions = ['10pt', '11pt', '12pt', '14pt', '16pt', '18pt', '24pt', '32pt'];

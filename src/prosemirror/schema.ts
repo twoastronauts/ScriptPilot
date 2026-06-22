@@ -1,5 +1,5 @@
 import { Schema } from 'prosemirror-model';
-import type { ScriptElement, ScriptElementType, TextStyle } from '@/shared/types';
+import type { InlineTextStyle, ScriptElement, ScriptElementType, TextStyle } from '@/shared/types';
 
 export interface PageChromeOptions {
   documentTitle?: string;
@@ -89,7 +89,8 @@ export const screenplaySchema = new Schema({
         omitted: { default: false },
         formatStyle: { default: null },
         generatedPageBreak: { default: false },
-        sprintClass: { default: '' }
+        sprintClass: { default: '' },
+        noteCount: { default: 0 }
       },
       parseDOM: [
         {
@@ -104,7 +105,8 @@ export const screenplaySchema = new Schema({
               revisionMark: element.dataset.revisionMark ?? null,
               omitted: element.dataset.omitted === 'true',
               formatStyle: parseFormatStyle(element.dataset.formatStyle),
-              generatedPageBreak: element.dataset.generatedPageBreak === 'true'
+              generatedPageBreak: element.dataset.generatedPageBreak === 'true',
+              noteCount: Number(element.dataset.noteCount) || 0
             };
           }
         }
@@ -121,13 +123,40 @@ export const screenplaySchema = new Schema({
           'data-omitted': String(Boolean(node.attrs.omitted)),
           'data-format-style': node.attrs.formatStyle ? JSON.stringify(node.attrs.formatStyle) : '',
           'data-generated-page-break': String(Boolean(node.attrs.generatedPageBreak)),
+          'data-note-count': String(Number(node.attrs.noteCount) || 0),
           style: [node.attrs.revisionColor ? `--revision:${node.attrs.revisionColor}` : '', textStyleToCssVars(node.attrs.formatStyle)].filter(Boolean).join(';')
         };
         return ['p', attrs, 0];
       }
     }
   },
-  marks: {}
+  marks: {
+    textStyle: {
+      attrs: {
+        style: { default: null }
+      },
+      parseDOM: [
+        {
+          tag: 'span[data-text-style]',
+          getAttrs: (dom) => {
+            const element = dom as HTMLElement;
+            return { style: parseFormatStyle(element.dataset.textStyle) };
+          }
+        }
+      ],
+      toDOM(mark) {
+        const style = mark.attrs.style as TextStyle | null;
+        return [
+          'span',
+          {
+            'data-text-style': style ? JSON.stringify(style) : '',
+            style: textStyleToInlineCss(style)
+          },
+          0
+        ];
+      }
+    }
+  }
 });
 
 export function elementsToProseMirrorDoc(elements: ScriptElement[], options: PageChromeOptions = {}) {
@@ -229,9 +258,10 @@ function elementToProseMirrorNode(element: ScriptElement, sprintClass = '') {
       omitted: Boolean(element.omitted),
       formatStyle: element.style ?? null,
       generatedPageBreak: Boolean(element.generatedPageBreak),
-      sprintClass
+      sprintClass,
+      noteCount: element.notes?.filter((note) => !note.resolved).length ?? 0
     },
-    element.text ? screenplaySchema.text(element.text) : undefined
+    element.text ? textNodesWithInlineStyles(element.text, element.inlineStyles) : undefined
   );
 }
 
@@ -261,6 +291,8 @@ function nodeToElement(node: import('prosemirror-model').Node, byId: Map<string,
   const existing = byId.get(id);
   const type = node.attrs.scriptType as ScriptElementType;
   const text = node.textContent;
+  const inlineStyles = extractInlineStyles(node);
+  const nextStyle = node.attrs.formatStyle ?? existing?.style;
   return {
     ...(existing ?? {
       id,
@@ -275,16 +307,68 @@ function nodeToElement(node: import('prosemirror-model').Node, byId: Map<string,
     revisionSetId: node.attrs.revisionSetId ?? existing?.revisionSetId,
     revisionMark: node.attrs.revisionMark ?? existing?.revisionMark,
     omitted: Boolean(node.attrs.omitted),
-    style: node.attrs.formatStyle ?? existing?.style,
+    style: nextStyle,
+    inlineStyles: inlineStyles.length ? inlineStyles : undefined,
     generatedPageBreak: Boolean(node.attrs.generatedPageBreak),
     updatedAt:
       existing?.text === text &&
       existing?.type === type &&
-      JSON.stringify(existing?.style) === JSON.stringify(node.attrs.formatStyle ?? undefined) &&
+      JSON.stringify(existing?.style) === JSON.stringify(nextStyle ?? undefined) &&
+      JSON.stringify(existing?.inlineStyles ?? undefined) === JSON.stringify(inlineStyles.length ? inlineStyles : undefined) &&
       Boolean(existing?.generatedPageBreak) === Boolean(node.attrs.generatedPageBreak)
         ? existing.updatedAt
         : now
   };
+}
+
+function textNodesWithInlineStyles(text: string, inlineStyles?: InlineTextStyle[]) {
+  const markType = screenplaySchema.marks.textStyle;
+  const ranges = (inlineStyles ?? [])
+    .filter((range) => range.to > range.from && range.from < text.length)
+    .map((range) => ({
+      ...range,
+      from: Math.max(0, Math.min(text.length, range.from)),
+      to: Math.max(0, Math.min(text.length, range.to))
+    }))
+    .filter((range) => range.to > range.from)
+    .sort((first, second) => first.from - second.from || first.to - second.to);
+
+  if (!ranges.length) return screenplaySchema.text(text);
+
+  const nodes: Array<ReturnType<typeof screenplaySchema.text>> = [];
+  let cursor = 0;
+
+  for (const range of ranges) {
+    if (range.from > cursor) nodes.push(screenplaySchema.text(text.slice(cursor, range.from)));
+    nodes.push(screenplaySchema.text(text.slice(range.from, range.to), [markType.create({ style: range.style })]));
+    cursor = Math.max(cursor, range.to);
+  }
+
+  if (cursor < text.length) nodes.push(screenplaySchema.text(text.slice(cursor)));
+  return nodes;
+}
+
+function extractInlineStyles(node: import('prosemirror-model').Node): InlineTextStyle[] {
+  const ranges: InlineTextStyle[] = [];
+  let cursor = 0;
+
+  node.forEach((child) => {
+    const length = child.text?.length ?? child.textContent.length;
+    child.marks.forEach((mark) => {
+      if (mark.type.name !== 'textStyle') return;
+      const style = mark.attrs.style as TextStyle | null;
+      if (!style || !length) return;
+      ranges.push({
+        id: crypto.randomUUID(),
+        from: cursor,
+        to: cursor + length,
+        style
+      });
+    });
+    cursor += length;
+  });
+
+  return ranges;
 }
 
 function parseFormatStyle(value?: string): TextStyle | null {
@@ -307,5 +391,18 @@ function textStyleToCssVars(style?: TextStyle | null): string {
   if (style.underline !== undefined) rules.push(`--line-decoration:${style.underline ? 'underline' : 'none'}`);
   if (style.textColor) rules.push(`--line-color:${style.textColor}`);
   if (style.backgroundColor) rules.push(`--line-bg:${style.backgroundColor}`);
+  return rules.join(';');
+}
+
+function textStyleToInlineCss(style?: TextStyle | null): string {
+  if (!style) return '';
+  const rules: string[] = [];
+  if (style.fontFamily) rules.push(`font-family:${style.fontFamily}`);
+  if (style.fontSize) rules.push(`font-size:${style.fontSize}`);
+  if (style.fontWeight || style.bold !== undefined) rules.push(`font-weight:${style.bold ? '700' : style.fontWeight ?? '400'}`);
+  if (style.italic !== undefined) rules.push(`font-style:${style.italic ? 'italic' : 'normal'}`);
+  if (style.underline !== undefined) rules.push(`text-decoration:${style.underline ? 'underline' : 'none'}`);
+  if (style.textColor) rules.push(`color:${style.textColor}`);
+  if (style.backgroundColor) rules.push(`background-color:${style.backgroundColor}`);
   return rules.join(';');
 }

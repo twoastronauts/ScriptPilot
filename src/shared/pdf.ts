@@ -1,12 +1,12 @@
 import type { ExportPdfOptions } from './ipc';
 import { ELEMENT_LABELS } from './screenplay';
-import type { ScriptDocument, ScriptElement, TextStyle } from './types';
+import type { InlineTextStyle, ScriptDocument, ScriptElement, TextStyle } from './types';
 
 export function createPrintableHtml(document: ScriptDocument, options: ExportPdfOptions = {}): string {
   const includeTitlePage = options.includeTitlePage ?? true;
   const includeStructureLines = options.includeStructureLines ?? true;
-  const matchDisplayColors = options.matchDisplayColors ?? document.settings.customPdfColors;
-  const themeClass = matchDisplayColors ? document.settings.viewMode : 'day';
+  const includeNotes = options.includeNotes ?? false;
+  const themeClass = options.nolanMode ? 'nolan' : 'print';
   const structureCss = includeStructureLines ? createStructureCss(document) : '';
   const watermark = options.includeWatermark ? `<div class="watermark">${escapeHtml(options.watermarkText || 'Confidential')}</div>` : '';
 
@@ -17,13 +17,17 @@ export function createPrintableHtml(document: ScriptDocument, options: ExportPdf
 <title>${escapeHtml(document.title)}</title>
 <style>
   @page { size: Letter; margin: 0.5in; }
+  html, body { margin: 0; min-height: 100%; background: #fff; }
   body { font-family: "Courier Prime", Courier, monospace; color: #111; background: #fff; }
-  body.night { color: #e8e0d0; background: #181b22; }
-  body.midnight { color: #d6f4ff; background: #020712; }
-  .title-page { position: relative; height: 9.25in; display: flex; flex-direction: column; justify-content: center; align-items: center; page-break-after: always; text-align: center; }
+  body.print { color: #111; background: #fff; }
+  body.nolan { color: #000; background: #b5202a; }
+  body.nolan .title-page, body.nolan .script { background: #b5202a; color: #000; }
+  .title-page { position: relative; height: 9.25in; display: flex; flex-direction: column; justify-content: center; align-items: center; page-break-after: always; text-align: center; background: #fff; color: #111; }
+  .title-page__image { position: absolute; inset: 0.35in; width: calc(100% - 0.7in); height: calc(100% - 0.7in); object-fit: contain; opacity: 0.16; z-index: 0; }
+  .title-page > :not(.title-page__image) { position: relative; z-index: 1; }
   .title-page h1 { font-size: 24pt; text-transform: uppercase; margin: 0 0 1in; }
   .title-page .contact { position: absolute; left: 1in; bottom: 1in; max-width: 3.5in; text-align: left; white-space: pre-wrap; }
-  .script { position: relative; font-size: 12pt; line-height: 1.05; }
+  .script { position: relative; font-size: 12pt; line-height: 1.05; background: #fff; color: #111; }
   .running-header, .running-footer, .page-number { position: fixed; font-size: 10pt; color: currentColor; opacity: 0.72; }
   .running-header { top: 0.22in; left: 1in; right: 1in; }
   .running-footer { bottom: 0.22in; left: 1in; right: 1in; }
@@ -39,6 +43,8 @@ export function createPrintableHtml(document: ScriptDocument, options: ExportPdf
   .page-break { break-after: page; height: 0; margin: 0; color: transparent; }
   .omitted { color: #888; text-decoration: line-through; }
   .revision::after { content: attr(data-revision-mark); position: absolute; left: calc(100% + 0.18in); top: 0; color: currentColor; font-weight: 700; }
+  .script-note-print { width: 4.9in; margin: 0.02in 0 0.1in 0.18in; padding: 0.06in 0.08in; border-left: 0.08in solid #d9a441; background: rgba(217, 164, 65, 0.12); font-family: Arial, sans-serif; font-size: 8.5pt; line-height: 1.3; white-space: pre-wrap; break-inside: avoid; }
+  .script-note-print b { display: inline-block; margin-right: 0.08in; font-size: 7.5pt; letter-spacing: 0.08em; text-transform: uppercase; }
   .structure-line { position: absolute; left: -0.22in; width: 0.08in; border-radius: 2px; background: var(--structure, #2f6fed); }
   .watermark { position: fixed; top: 43%; left: 0; right: 0; text-align: center; opacity: 0.1; transform: rotate(-32deg); font-size: 64pt; font-family: Arial, sans-serif; z-index: 0; }
   ${structureCss}
@@ -49,7 +55,7 @@ ${watermark}
 ${createRunningMatter(document)}
 ${includeTitlePage ? createTitlePage(document) : ''}
 <main class="script">
-${document.elements.map(elementToHtml).join('\n')}
+${document.elements.map((element) => elementToHtml(element, includeNotes)).join('\n')}
 </main>
 </body>
 </html>`;
@@ -62,6 +68,7 @@ function createTitlePage(document: ScriptDocument): string {
     ? `<p class="revision-title-line" style="color:${escapeHtml(activeRevision.color)}">${escapeHtml(activeRevision.name)} - ${escapeHtml(new Date(activeRevision.date).toLocaleDateString())}</p>`
     : '';
   return `<section class="title-page">
+  ${document.titlePage.fields?.CoverImage ? `<img class="title-page__image" src="${escapeHtml(document.titlePage.fields.CoverImage)}" alt="" />` : ''}
   <h1 style="${textStyleToCss(styles.title)}">${escapeHtml(document.titlePage.title || document.title)}</h1>
   <p style="${textStyleToCss(styles.byline)}">${escapeHtml(document.titlePage.byline ?? 'Written by')}</p>
   <p style="${textStyleToCss(styles.author)}">${escapeHtml(document.titlePage.author || document.author || '')}</p>
@@ -80,14 +87,47 @@ function createRunningMatter(document: ScriptDocument): string {
   return `${header}${footer}${page}`;
 }
 
-function elementToHtml(element: ScriptElement): string {
+function elementToHtml(element: ScriptElement, includeNotes: boolean): string {
   const classes = ['line', element.type];
   if (element.omitted) classes.push('omitted');
   if (element.revisionColor) classes.push('revision');
   const styleRules = [element.revisionColor ? `--revision:${escapeHtml(element.revisionColor)}` : '', textStyleToCss(element.style)].filter(Boolean).join(';');
   const style = styleRules ? ` style="${styleRules}"` : '';
   const revisionMark = element.revisionColor ? ` data-revision-mark="${escapeHtml(element.revisionMark ?? '*')}"` : '';
-  return `<p id="${element.id}" class="${classes.join(' ')}"${style}${revisionMark} aria-label="${ELEMENT_LABELS[element.type]}">${escapeHtml(element.text)}</p>`;
+  const notes = includeNotes ? notesToHtml(element) : '';
+  return `<p id="${element.id}" class="${classes.join(' ')}"${style}${revisionMark} aria-label="${ELEMENT_LABELS[element.type]}">${renderStyledText(element.text, element.inlineStyles)}</p>${notes}`;
+}
+
+function notesToHtml(element: ScriptElement): string {
+  const notes = (element.notes ?? []).filter((note) => !note.resolved && note.text.trim());
+  if (!notes.length) return '';
+  return notes
+    .map((note, index) => `<aside class="script-note-print" style="border-left-color:${escapeHtml(note.color || '#d9a441')}"><b>Note ${index + 1}</b>${escapeHtml(note.text.trim())}</aside>`)
+    .join('');
+}
+
+function renderStyledText(text: string, inlineStyles?: InlineTextStyle[]): string {
+  const ranges = (inlineStyles ?? [])
+    .filter((range) => range.to > range.from && range.from < text.length)
+    .map((range) => ({
+      ...range,
+      from: Math.max(0, Math.min(text.length, range.from)),
+      to: Math.max(0, Math.min(text.length, range.to))
+    }))
+    .filter((range) => range.to > range.from)
+    .sort((first, second) => first.from - second.from || first.to - second.to);
+
+  if (!ranges.length) return escapeHtml(text);
+
+  let cursor = 0;
+  let html = '';
+  for (const range of ranges) {
+    if (range.from > cursor) html += escapeHtml(text.slice(cursor, range.from));
+    html += `<span style="${textStyleToCss(range.style)}">${escapeHtml(text.slice(range.from, range.to))}</span>`;
+    cursor = Math.max(cursor, range.to);
+  }
+  if (cursor < text.length) html += escapeHtml(text.slice(cursor));
+  return html;
 }
 
 function createStructureCss(document: ScriptDocument): string {

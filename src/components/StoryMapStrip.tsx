@@ -36,6 +36,15 @@ interface ActEditorState {
   summary: string;
 }
 
+interface FloatingPreview {
+  title: string;
+  meta: string;
+  body: string;
+  color: string;
+  left: number;
+  top: number;
+}
+
 const STRUCTURE_COLORS = ['#91c8b7', '#6ca8e7', '#a88adf', '#d9a441', '#9f3f45', '#55b8c7', '#b95f89'];
 
 export function OutlineEditorStrip() {
@@ -53,6 +62,7 @@ export function OutlineEditorStrip() {
     deleteStructureRange
   } = useWorkspace();
   const [actEditor, setActEditor] = useState<ActEditorState>();
+  const [floatingPreview, setFloatingPreview] = useState<FloatingPreview>();
 
   const pageMap = useMemo(() => buildPageMap(document.elements), [document.elements]);
   const scenes = useMemo(() => buildSceneEntries(document.elements, pageMap), [document.elements, pageMap]);
@@ -224,6 +234,13 @@ export function OutlineEditorStrip() {
     deleteBeat(beatId);
   };
 
+  const previewHandlers = (preview: Omit<FloatingPreview, 'left' | 'top'>) => ({
+    onMouseEnter: (event: React.MouseEvent<HTMLElement>) => setFloatingPreview(resolveFloatingPreview(preview, event.currentTarget)),
+    onMouseLeave: () => setFloatingPreview(undefined),
+    onFocus: (event: React.FocusEvent<HTMLElement>) => setFloatingPreview(resolveFloatingPreview(preview, event.currentTarget)),
+    onBlur: () => setFloatingPreview(undefined)
+  });
+
   return (
     <section className={expanded ? 'outline-editor-strip is-expanded' : 'outline-editor-strip'} aria-label="Outline editor">
       <div className="outline-editor-labels">
@@ -248,7 +265,6 @@ export function OutlineEditorStrip() {
               key={range.id}
               className="outline-beat outline-beat--act"
               style={rangeStyle(range.startPage, range.endPage, pageCount, range.color)}
-              title={`${range.label}: pages ${range.startPage}-${range.endPage}`}
               onClick={() => {
                 const targetRange = range.sourceRangeId ? document.structureRanges.find((item) => item.id === range.sourceRangeId) : undefined;
                 if (targetRange) setSelectedElement(targetRange.startElementId);
@@ -256,6 +272,12 @@ export function OutlineEditorStrip() {
               onDoubleClick={(event) => {
                 openActEditor(range, event);
               }}
+              {...previewHandlers({
+                title: range.label,
+                meta: `pg. ${range.startPage}-${range.endPage}`,
+                body: range.summary || (range.sourceRangeId ? 'Double-click to define this act.' : 'Suggested marker. Double-click to create your own act.'),
+                color: range.color
+              })}
             >
               {range.sourceRangeId && (
                 <span
@@ -280,11 +302,6 @@ export function OutlineEditorStrip() {
                   onDoubleClick={(event) => event.stopPropagation()}
                 />
               )}
-              <MarkerPreview
-                title={range.label}
-                meta={`Pages ${range.startPage}-${range.endPage}`}
-                body={range.summary || (range.sourceRangeId ? 'Double-click to define this act.' : 'Suggested marker. Double-click to create your own act.')}
-              />
             </button>
           ))}
         </div>
@@ -295,7 +312,6 @@ export function OutlineEditorStrip() {
               key={range.id}
               className="outline-beat"
               style={rangeStyle(range.startPage, range.endPage, pageCount, range.color)}
-              title={`${range.label}: pages ${range.startPage}-${range.endPage}`}
               onClick={() => {
                 const beat = document.beats.find((item) => item.id === range.id);
                 if (beat?.linkedElementId) setSelectedElement(beat.linkedElementId);
@@ -306,6 +322,12 @@ export function OutlineEditorStrip() {
                 setPanel('beats');
                 window.setTimeout(() => window.dispatchEvent(new CustomEvent('scriptpilot:center-beat', { detail: { beatId: range.id } })), 0);
               }}
+              {...previewHandlers({
+                title: range.label,
+                meta: `pg. ${range.startPage}-${range.endPage}`,
+                body: range.summary || 'Double-click to open this beat on the board.',
+                color: range.color
+              })}
             >
               <Boxes size={12} />
               <span className="outline-marker-label">{range.label}</span>
@@ -314,7 +336,6 @@ export function OutlineEditorStrip() {
                 role="button"
                 tabIndex={0}
                 aria-label={`Delete beat ${range.label}`}
-                title="Delete beat"
                 onClick={(event) => deleteBeatFromOutline(range.id, event)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') deleteBeatFromOutline(range.id, event);
@@ -322,7 +343,6 @@ export function OutlineEditorStrip() {
               >
                 <Trash2 size={10} />
               </span>
-              <MarkerPreview title={range.label} meta={`Pages ${range.startPage}-${range.endPage}`} body={range.summary || 'Double-click to open this beat on the board.'} />
             </button>
           ))}
         </div>
@@ -332,17 +352,21 @@ export function OutlineEditorStrip() {
             <button
               key={scene.element.id}
               className={scene.element.id === selectedElementId ? 'outline-beat outline-beat--scene is-active' : 'outline-beat outline-beat--scene'}
-              style={rangeStyle(scene.page, scene.nextPage - 1, pageCount, document.structureRanges[scene.index % Math.max(1, document.structureRanges.length)]?.color ?? '#55b8c7')}
-              title={`${scene.element.text || `Scene ${scene.index + 1}`}: page ${scene.page}`}
+              style={sceneAnchorStyle(scene.page, pageCount, document.structureRanges[scene.index % Math.max(1, document.structureRanges.length)]?.color ?? '#55b8c7')}
               onClick={() => setSelectedElement(scene.element.id)}
               onDoubleClick={(event) => {
                 event.stopPropagation();
                 setSelectedElement(scene.element.id);
               }}
+              {...previewHandlers({
+                title: scene.element.text || `Scene ${scene.index + 1}`,
+                meta: `pg. ${scene.page}`,
+                body: scene.summary || 'No scene summary yet.',
+                color: document.structureRanges[scene.index % Math.max(1, document.structureRanges.length)]?.color ?? '#55b8c7'
+              })}
             >
               <Film size={12} />
               <span className="outline-marker-label">{scene.element.text || `Scene ${scene.index + 1}`}</span>
-              <MarkerPreview title={scene.element.text || `Scene ${scene.index + 1}`} meta={`Page ${scene.page}`} body={scene.summary || 'No scene summary yet.'} />
             </button>
           ))}
         </div>
@@ -360,8 +384,7 @@ export function OutlineEditorStrip() {
             <button
               key={scene.element.id}
               className={scene.element.id === selectedElementId ? 'outline-scene is-active' : 'outline-scene'}
-              title={`${scene.element.text} - pg. ${scene.page}`}
-              style={rangeStyle(scene.page, scene.nextPage - 1, pageCount, document.structureRanges[scene.index % Math.max(1, document.structureRanges.length)]?.color ?? '#55b8c7')}
+              style={sceneAnchorStyle(scene.page, pageCount, document.structureRanges[scene.index % Math.max(1, document.structureRanges.length)]?.color ?? '#55b8c7')}
               onClick={() => setSelectedElement(scene.element.id)}
               onDoubleClick={(event) => {
                 event.stopPropagation();
@@ -455,18 +478,35 @@ export function OutlineEditorStrip() {
           </div>
         </form>
       )}
+      {floatingPreview && (
+        <div
+          className="outline-floating-preview"
+          style={{
+            '--outline-color': floatingPreview.color,
+            left: floatingPreview.left,
+            top: floatingPreview.top
+          } as React.CSSProperties}
+          aria-hidden="true"
+        >
+          <span>{floatingPreview.title}</span>
+          <small>{floatingPreview.meta}</small>
+          <em>{floatingPreview.body}</em>
+        </div>
+      )}
     </section>
   );
 }
 
-function MarkerPreview({ title, meta, body }: { title: string; meta: string; body: string }) {
-  return (
-    <span className="outline-marker-preview" aria-hidden="true">
-      <span>{title}</span>
-      <small>{meta}</small>
-      <em>{body}</em>
-    </span>
-  );
+function resolveFloatingPreview(preview: Omit<FloatingPreview, 'left' | 'top'>, element: HTMLElement): FloatingPreview {
+  const rect = element.getBoundingClientRect();
+  const width = 278;
+  const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.left));
+  const top = Math.max(72, Math.min(window.innerHeight - 170, rect.bottom + 8));
+  return {
+    ...preview,
+    left,
+    top
+  };
 }
 
 function buildPageMap(elements: ScriptElement[]): Map<string, number> {
@@ -588,10 +628,20 @@ function summarizeScene(elements: ScriptElement[], startIndex: number, endIndex:
 }
 
 function estimateElementLines(element: ScriptElement): number {
+  if (element.type === 'page-break') return 55;
   const hardLines = Math.max(1, element.text.split(/\r?\n/).length);
   const softLines = Math.max(1, Math.ceil(element.text.length / lineWidthFor(element.type)));
   const typeWeight = element.type === 'dialogue' ? 1.2 : element.type === 'scene-heading' ? 1.4 : 1;
   return Math.max(hardLines, softLines) * typeWeight;
+}
+
+function sceneAnchorStyle(page: number, pageCount: number, color: string): React.CSSProperties {
+  return {
+    '--outline-color': color,
+    '--scene-color': color,
+    left: `${leftForPage(page, pageCount)}%`,
+    width: `${Math.max(3.2, Math.min(7, 100 / Math.max(1, pageCount)))}%`
+  } as React.CSSProperties;
 }
 
 function rangeStyle(startPage: number, endPage: number, pageCount: number, color: string): React.CSSProperties {

@@ -325,13 +325,32 @@ export function ScreenplayEditor() {
     closeWritingMenus();
   }, [closeWritingMenus, setWarning]);
 
+  const applyTextStylePatch = useCallback((from: number, to: number, patch: Partial<TextStyle>, fallbackElementId?: string) => {
+    const view = viewRef.current;
+    if (!view || from >= to) {
+      if (fallbackElementId) updateElementStyle(fallbackElementId, patch);
+      return;
+    }
+
+    const markType = view.state.schema.marks.textStyle;
+    const style = compactTextStylePatch(patch);
+    let tr = view.state.tr.removeMark(from, to, markType);
+    if (style) tr = tr.addMark(from, to, markType.create({ style }));
+    view.dispatch(tr.scrollIntoView());
+    view.focus();
+  }, [updateElementStyle]);
+
   const applyContextFormat = useCallback((patch: Partial<TextStyle>) => {
     const menu = writerContextMenuRef.current;
     if (!menu?.elementId) return;
     setSelectedElement(menu.elementId);
-    updateElementStyle(menu.elementId, patch);
+    if (menu.selectedText && menu.rangeTo > menu.rangeFrom) {
+      applyTextStylePatch(menu.rangeFrom, menu.rangeTo, patch, menu.elementId);
+    } else {
+      updateElementStyle(menu.elementId, patch);
+    }
     closeWritingMenus();
-  }, [closeWritingMenus, setSelectedElement, updateElementStyle]);
+  }, [applyTextStylePatch, closeWritingMenus, setSelectedElement, updateElementStyle]);
 
   const applyContextElementType = useCallback((type: ScriptElementType) => {
     const menu = writerContextMenuRef.current;
@@ -506,6 +525,25 @@ export function ScreenplayEditor() {
     window.addEventListener('scriptpilot:request-spelling', requestSpelling);
     return () => window.removeEventListener('scriptpilot:request-spelling', requestSpelling);
   }, [requestSpellingMenu]);
+
+  useEffect(() => {
+    function applyFormat(event: Event) {
+      const view = viewRef.current;
+      if (!view) return;
+      const patch = (event as CustomEvent<Partial<TextStyle>>).detail;
+      const selection = view.state.selection;
+      const elementId = selection.$from.parent.attrs.id as string | undefined;
+      if (!patch) return;
+      if (!selection.empty) {
+        applyTextStylePatch(selection.from, selection.to, patch, elementId);
+      } else if (elementId) {
+        updateElementStyle(elementId, patch);
+      }
+    }
+
+    window.addEventListener('scriptpilot:format-selection', applyFormat);
+    return () => window.removeEventListener('scriptpilot:format-selection', applyFormat);
+  }, [applyTextStylePatch, updateElementStyle]);
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -875,7 +913,7 @@ export function ScreenplayEditor() {
           </div>
           {writerContextMenu.corrections.length > 0 && (
             <div className="writer-context-menu__section">
-              <span>Fix typo</span>
+              <span>Did you mean</span>
               <div className="writer-context-menu__chips">
                 {writerContextMenu.corrections.slice(0, 5).map((option) => (
                   <button
@@ -891,7 +929,7 @@ export function ScreenplayEditor() {
           )}
           {writerContextMenu.synonyms.length > 0 && (
             <div className="writer-context-menu__section">
-              <span>Alt Word</span>
+              <span>Replace with</span>
               <div className="writer-context-menu__chips">
                 {writerContextMenu.synonyms.slice(0, 8).map((option) => (
                   <button
@@ -967,7 +1005,7 @@ export function ScreenplayEditor() {
             </div>
           </div>
           <div className="writer-context-menu__section">
-            <span>Format line</span>
+            <span>{writerContextMenu.selectedText ? 'Format selection' : 'Format line'}</span>
             <div className="writer-context-menu__grid">
               <button
                 onMouseDown={(event) => runWriterMenuAction(event, () => applyContextFormat({ bold: true, fontWeight: '700' }))}
@@ -1063,6 +1101,11 @@ function lineWidthForElement(type: ScriptElementType): number {
   if (type === 'parenthetical') return 28;
   if (type === 'character') return 24;
   return 58;
+}
+
+function compactTextStylePatch(patch: Partial<TextStyle>): TextStyle | undefined {
+  const style = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined && value !== '')) as TextStyle;
+  return Object.keys(style).length ? style : undefined;
 }
 
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -1231,10 +1274,20 @@ function updateSprintLineClasses(host: HTMLElement | null, selectedElementId: st
   lines.forEach((line) => line.classList.remove(...classes));
   if (!sprintActive || !selectedElementId) return;
 
-  let currentIndex = selectedElementId ? lines.findIndex((line) => line.dataset.id === selectedElementId) : -1;
+  let currentIndex = -1;
+  const selection = window.getSelection();
+  const anchorElement =
+    selection?.anchorNode instanceof Element
+      ? selection.anchorNode
+      : selection?.anchorNode?.parentElement;
+  const selectionLine = anchorElement?.closest('.script-line') as HTMLElement | null;
+  if (selectionLine && host.contains(selectionLine)) {
+    currentIndex = lines.indexOf(selectionLine);
+  }
+  if (currentIndex < 0 && selectedElementId) currentIndex = lines.findIndex((line) => line.dataset.id === selectedElementId);
   if (currentIndex < 0) {
     const activeLine = document.activeElement?.closest?.('.script-line') as HTMLElement | null;
-    currentIndex = activeLine ? lines.indexOf(activeLine) : -1;
+    currentIndex = activeLine && host.contains(activeLine) ? lines.indexOf(activeLine) : -1;
   }
   if (currentIndex < 0) currentIndex = 0;
   if (currentIndex < 0) return;

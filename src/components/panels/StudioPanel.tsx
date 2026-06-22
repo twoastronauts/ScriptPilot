@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { CalendarDays, ClipboardList, ContactRound, Images, ListChecks } from 'lucide-react';
+import { CalendarDays, ClipboardList, ContactRound, Images, ListChecks, Plus, Trash2 } from 'lucide-react';
 import { buildProductionBoard } from '@/shared/productionSuite';
 import { useWorkspace } from '@/store/workspace';
+import type { EditableCallSheet, EditableProductionShot } from '@/shared/types';
 import type {
   CallSheetSummary,
   CallSheetRecipient,
@@ -22,9 +23,17 @@ const viewTabs = [
 ] as const;
 
 export function StudioPanel() {
-  const { document } = useWorkspace();
+  const { document, setProductionShots, setProductionCallSheets } = useWorkspace();
   const board = useMemo(() => buildProductionBoard(document), [document]);
   const [view, setView] = useState<StudioView>('shots');
+  const shotRows = useMemo(
+    () => (document.productionShots?.length ? document.productionShots : board.shotList.map(generatedShotToEditable)),
+    [board.shotList, document.productionShots]
+  );
+  const callRows = useMemo(
+    () => (document.productionCallSheets?.length ? document.productionCallSheets : board.callSheets.map(generatedCallSheetToEditable)),
+    [board.callSheets, document.productionCallSheets]
+  );
 
   return (
     <section className="panel">
@@ -34,10 +43,10 @@ export function StudioPanel() {
       </div>
 
       <div className="metric-grid">
-        <Metric label="Shots" value={board.shotList.length} />
+        <Metric label="Shots" value={shotRows.length} />
         <Metric label="Cards" value={board.storyboardCards.length} />
         <Metric label="Days" value={board.stripboardSchedule.length} />
-        <Metric label="Contacts" value={board.contacts.length} />
+        <Metric label="Calls" value={callRows.length} />
       </div>
 
       <div className="segmented">
@@ -52,14 +61,14 @@ export function StudioPanel() {
         })}
       </div>
 
-      {board.scenes.length === 0 ? (
+      {board.scenes.length === 0 && view !== 'shots' && view !== 'calls' ? (
         <p className="report-row">No scenes yet.</p>
       ) : (
         <>
-          {view === 'shots' && <ShotList shots={board.shotList} />}
+          {view === 'shots' && <ShotList shots={shotRows} onChange={setProductionShots} />}
           {view === 'storyboard' && <StoryboardCards cards={board.storyboardCards} />}
           {view === 'schedule' && <ScheduleList schedule={board.stripboardSchedule} />}
-          {view === 'calls' && <CallSheets callSheets={board.callSheets} />}
+          {view === 'calls' && <CallSheets callSheets={callRows} onChange={setProductionCallSheets} />}
           {view === 'contacts' && <Contacts contacts={board.contacts} recipients={board.recipients} />}
         </>
       )}
@@ -76,22 +85,97 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function ShotList({ shots }: { shots: ProductionShot[] }) {
+function ShotList({ shots, onChange }: { shots: EditableProductionShot[]; onChange: (shots: EditableProductionShot[]) => void }) {
+  function updateShot(id: string, patch: Partial<EditableProductionShot>) {
+    onChange(shots.map((shot) => (shot.id === id ? { ...shot, ...patch, custom: true } : shot)));
+  }
+
+  function addShot() {
+    const nextOrder = shots.length + 1;
+    onChange([
+      ...shots,
+      {
+        id: crypto.randomUUID(),
+        sceneNumber: shots.at(-1)?.sceneNumber ?? 1,
+        order: nextOrder,
+        shotNumber: `${shots.at(-1)?.sceneNumber ?? 1}${String.fromCharCode(64 + Math.min(26, nextOrder))}`,
+        setup: 'Manual setup',
+        shotType: 'custom',
+        label: 'New shot',
+        description: '',
+        subject: '',
+        cameraAngle: 'Eye level',
+        cameraMovement: 'Static',
+        cameraEquipment: 'Camera',
+        framing: '16:9',
+        location: '',
+        timeOfDay: '',
+        characters: [],
+        tags: [],
+        estimatedMinutes: 4,
+        setupMinutes: 20,
+        custom: true
+      }
+    ]);
+  }
+
+  function removeShot(id: string) {
+    onChange(shots.filter((shot) => shot.id !== id));
+  }
+
   return (
     <>
-      <h3>Shot List</h3>
+      <div className="studio-list-header">
+        <h3>Shot List</h3>
+        <button type="button" onClick={addShot} title="Add shot">
+          <Plus size={14} />
+          Add
+        </button>
+      </div>
       {shots.map((shot) => (
-        <div key={shot.id} className="shot-row">
-          <strong>
-            Scene {shot.sceneNumber}.{shot.order} - {shot.label}
-          </strong>
-          <span>{shot.description || shot.subject}</span>
-          <small>
-            {shot.shotType} - {shot.framing} - {shot.cameraAngle} - {shot.cameraMovement}
-          </small>
-          <small>
-            {shot.location} - {shot.timeOfDay} - {shot.cameraEquipment} - {shot.setupMinutes}m setup
-          </small>
+        <div key={shot.id} className="shot-row shot-row--editable">
+          <div className="studio-row-toolbar">
+            <strong>
+              Scene {shot.sceneNumber}.{shot.order} - {shot.shotNumber}
+            </strong>
+            <button type="button" title="Remove shot" onClick={() => removeShot(shot.id)}>
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <label>
+            <span>Label</span>
+            <input value={shot.label} onChange={(event) => updateShot(shot.id, { label: event.target.value })} />
+          </label>
+          <label>
+            <span>Brief description</span>
+            <textarea rows={2} value={shot.description} onChange={(event) => updateShot(shot.id, { description: event.target.value })} />
+          </label>
+          <div className="studio-edit-grid">
+            <label>
+              <span>Shot type</span>
+              <input value={shot.shotType} onChange={(event) => updateShot(shot.id, { shotType: event.target.value as EditableProductionShot['shotType'] })} />
+            </label>
+            <label>
+              <span>Angle</span>
+              <input value={shot.cameraAngle} onChange={(event) => updateShot(shot.id, { cameraAngle: event.target.value })} />
+            </label>
+            <label>
+              <span>Movement</span>
+              <input value={shot.cameraMovement} onChange={(event) => updateShot(shot.id, { cameraMovement: event.target.value })} />
+            </label>
+            <label>
+              <span>Equipment</span>
+              <input value={shot.cameraEquipment} onChange={(event) => updateShot(shot.id, { cameraEquipment: event.target.value })} />
+            </label>
+            <label>
+              <span>Framing</span>
+              <input value={shot.framing} onChange={(event) => updateShot(shot.id, { framing: event.target.value })} />
+            </label>
+            <label>
+              <span>Setup min.</span>
+              <input type="number" min={0} value={shot.setupMinutes} onChange={(event) => updateShot(shot.id, { setupMinutes: Math.max(0, Number(event.target.value) || 0) })} />
+            </label>
+          </div>
         </div>
       ))}
     </>
@@ -134,18 +218,82 @@ function ScheduleList({ schedule }: { schedule: StripboardDay[] }) {
   );
 }
 
-function CallSheets({ callSheets }: { callSheets: CallSheetSummary[] }) {
+function CallSheets({ callSheets, onChange }: { callSheets: EditableCallSheet[]; onChange: (callSheets: EditableCallSheet[]) => void }) {
+  function updateCallSheet(id: string, patch: Partial<EditableCallSheet>) {
+    onChange(callSheets.map((callSheet) => (callSheet.id === id ? { ...callSheet, ...patch, custom: true } : callSheet)));
+  }
+
+  function addCallSheet() {
+    onChange([
+      ...callSheets,
+      {
+        id: crypto.randomUUID(),
+        projectTitle: '',
+        shootDay: (callSheets.at(-1)?.shootDay ?? 0) + 1,
+        title: 'New Call Sheet',
+        location: '',
+        timeOfDay: '',
+        callTime: '7:00 AM',
+        scenesText: '',
+        cast: [],
+        departments: [],
+        notes: ['Manual call sheet.'],
+        custom: true
+      }
+    ]);
+  }
+
+  function removeCallSheet(id: string) {
+    onChange(callSheets.filter((callSheet) => callSheet.id !== id));
+  }
+
   return (
     <>
-      <h3>Call Sheets</h3>
+      <div className="studio-list-header">
+        <h3>Call Sheets</h3>
+        <button type="button" onClick={addCallSheet} title="Add call sheet">
+          <Plus size={14} />
+          Add
+        </button>
+      </div>
       {callSheets.map((callSheet) => (
-        <div key={callSheet.id} className="report-row">
-          <span>
-            <strong>{callSheet.title}</strong> {callSheet.callTime}
-          </span>
-          <small>
-            {callSheet.recipients.length} recipients - {joinOrDash(callSheet.departments)}
-          </small>
+        <div key={callSheet.id} className="shot-row shot-row--editable">
+          <div className="studio-row-toolbar">
+            <strong>Day {callSheet.shootDay}</strong>
+            <button type="button" title="Remove call sheet" onClick={() => removeCallSheet(callSheet.id)}>
+              <Trash2 size={13} />
+            </button>
+          </div>
+          <label>
+            <span>Title</span>
+            <input value={callSheet.title} onChange={(event) => updateCallSheet(callSheet.id, { title: event.target.value })} />
+          </label>
+          <div className="studio-edit-grid">
+            <label>
+              <span>Location</span>
+              <input value={callSheet.location} onChange={(event) => updateCallSheet(callSheet.id, { location: event.target.value })} />
+            </label>
+            <label>
+              <span>Call time</span>
+              <input value={callSheet.callTime} onChange={(event) => updateCallSheet(callSheet.id, { callTime: event.target.value })} />
+            </label>
+            <label>
+              <span>Time</span>
+              <input value={callSheet.timeOfDay} onChange={(event) => updateCallSheet(callSheet.id, { timeOfDay: event.target.value })} />
+            </label>
+            <label>
+              <span>Departments</span>
+              <input value={callSheet.departments.join(', ')} onChange={(event) => updateCallSheet(callSheet.id, { departments: splitList(event.target.value) })} />
+            </label>
+          </div>
+          <label>
+            <span>Scenes</span>
+            <textarea rows={2} value={callSheet.scenesText} onChange={(event) => updateCallSheet(callSheet.id, { scenesText: event.target.value })} />
+          </label>
+          <label>
+            <span>Notes</span>
+            <textarea rows={2} value={callSheet.notes.join('\n')} onChange={(event) => updateCallSheet(callSheet.id, { notes: event.target.value.split(/\r?\n/).filter(Boolean) })} />
+          </label>
         </div>
       ))}
     </>
@@ -179,4 +327,36 @@ function Contacts({ contacts, recipients }: { contacts: ProductionContact[]; rec
 
 function joinOrDash(items: string[]): string {
   return items.length ? items.join(', ') : '-';
+}
+
+function generatedShotToEditable(shot: ProductionShot): EditableProductionShot {
+  return {
+    ...shot,
+    tags: shot.tags.map((tag) => tag.label),
+    custom: false
+  };
+}
+
+function generatedCallSheetToEditable(callSheet: CallSheetSummary): EditableCallSheet {
+  return {
+    id: callSheet.id,
+    projectTitle: callSheet.projectTitle,
+    shootDay: callSheet.shootDay,
+    title: callSheet.title,
+    location: callSheet.location,
+    timeOfDay: callSheet.timeOfDay,
+    callTime: callSheet.callTime,
+    scenesText: callSheet.scenes.map((scene) => `Scene ${scene.sceneNumber}: ${scene.heading}`).join('\n'),
+    cast: callSheet.cast,
+    departments: callSheet.departments,
+    notes: callSheet.notes,
+    custom: false
+  };
+}
+
+function splitList(value: string): string[] {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

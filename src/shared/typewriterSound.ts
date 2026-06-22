@@ -44,7 +44,7 @@ export function playTypewriterKey(key: string, volume = 0.7, bellVolume = volume
   filter.Q.value = 8;
   const normalizedVolume = Math.max(0, Math.min(1, volume));
   gain.gain.setValueAtTime(0.0001, now);
-  gain.gain.exponentialRampToValueAtTime(0.1 * normalizedVolume, now + 0.004);
+  gain.gain.exponentialRampToValueAtTime(0.18 * normalizedVolume, now + 0.004);
   gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
   source.connect(filter);
   filter.connect(gain);
@@ -53,7 +53,7 @@ export function playTypewriterKey(key: string, volume = 0.7, bellVolume = volume
   source.stop(now + duration);
 }
 
-export function playTypewriterReturnBell(volume = 0.7): void {
+export function playTypewriterReturnBell(volume = 0.45): void {
   if (volume <= 0) return;
   const normalizedVolume = Math.max(0, Math.min(1, volume));
   if (typeof Audio === 'undefined') return;

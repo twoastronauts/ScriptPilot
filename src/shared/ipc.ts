@@ -10,10 +10,14 @@ export interface FileResult<T> {
 
 export interface ExportPdfOptions {
   includeTitlePage?: boolean;
+  includeNotes?: boolean;
   includeStructureLines?: boolean;
   includeWatermark?: boolean;
   watermarkText?: string;
   matchDisplayColors?: boolean;
+  openAfterExport?: boolean;
+  nolanMode?: boolean;
+  promptForNolanMode?: boolean;
 }
 
 export interface ImportedPdfResult extends FileResult<ScriptDocument> {

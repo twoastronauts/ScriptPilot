@@ -8,6 +8,7 @@ import { ScreenplayEditor } from './components/ScreenplayEditor';
 import { OutlineEditorStrip } from './components/StoryMapStrip';
 import { TitlePageEditor } from './components/TitlePageEditor';
 import { Toolbar } from './components/Toolbar';
+import { TutorialOverlay } from './components/TutorialOverlay';
 import { themeColorsToCssVariables } from './shared/themeColors';
 import { playTypewriterKey } from './shared/typewriterSound';
 import { useWorkspace } from './store/workspace';
@@ -73,8 +74,8 @@ export function App() {
       playTypewriterKey(event.key, document.settings.typewriterVolume, document.settings.typewriterBellVolume);
     }
 
-    window.addEventListener('keydown', play);
-    return () => window.removeEventListener('keydown', play);
+    window.addEventListener('keydown', play, true);
+    return () => window.removeEventListener('keydown', play, true);
   }, [document.settings.typewriterBellVolume, document.settings.typewriterMode, document.settings.typewriterSounds, document.settings.typewriterVolume, workspaceView]);
 
   useEffect(() => {
@@ -124,6 +125,7 @@ export function App() {
     return (
       <div className={clsx('app', 'app-home', `theme-${document.settings.viewMode}`)} style={themeColorVars}>
         <HomePage />
+        <TutorialOverlay />
         {lastWarning && <div className="toast">{lastWarning}</div>}
       </div>
     );
@@ -147,6 +149,7 @@ export function App() {
       }
     >
       <Toolbar />
+      <TutorialOverlay />
       {rightRailCollapsed && (
         <button className="side-rail-restore" title="Show side panel" aria-label="Show side panel" onClick={() => setRightRailCollapsed(false)}>
           <PanelRightOpen size={17} />

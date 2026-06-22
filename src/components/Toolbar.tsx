@@ -17,6 +17,7 @@ import {
   Moon,
   Save,
   Sparkles,
+  Settings as SettingsIcon,
   Sun,
   Timer,
   Type,
@@ -28,7 +29,7 @@ import { useWorkspace } from '@/store/workspace';
 import { createDocumentFromPlainText } from '@/shared/defaultDocument';
 import { ELEMENT_LABELS } from '@/shared/screenplay';
 import { playTypewriterReturnBell } from '@/shared/typewriterSound';
-import type { ScriptElementType, ViewMode } from '@/shared/types';
+import type { ScriptElementType, TextStyle, ViewMode } from '@/shared/types';
 import scriptPilotIcon from '@/assets/script-pilot-icon.png';
 import { TextFormatControls } from './TextFormatControls';
 import { elementTypes, shortcutForType, useScreenplayShortcuts } from './elementShortcuts';
@@ -58,13 +59,13 @@ export function Toolbar() {
     finishFdxSave,
     recordBackup,
     setViewMode,
+    setPanel,
     toggleTypewriterMode,
     toggleFocusMode,
     startSprint,
     stopSprint,
     setRevisionMode,
     setSelectedElementType,
-    updateSelectedElementStyle,
     updateSettings,
     toggleTitlePage,
     setWarning
@@ -72,6 +73,7 @@ export function Toolbar() {
 
   const [sprintNow, setSprintNow] = useState(() => Date.now());
   const [sprintNotice, setSprintNotice] = useState<string | null>(null);
+  const [formatOpen, setFormatOpen] = useState(false);
   const lastChimeRef = useRef(0);
   const noticeTimeoutRef = useRef<number | undefined>(undefined);
   const selected = document.elements.find((element) => element.id === selectedElementId);
@@ -106,6 +108,18 @@ export function Toolbar() {
 
   useEffect(() => () => window.clearTimeout(noticeTimeoutRef.current), []);
 
+  useEffect(() => {
+    function toggleFormatPanel(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        setFormatOpen((value) => !value);
+      }
+    }
+
+    window.addEventListener('keydown', toggleFormatPanel);
+    return () => window.removeEventListener('keydown', toggleFormatPanel);
+  }, []);
+
   async function openProject() {
     const result = await window.screenwriter?.openProject();
     if (!result || result.canceled) return;
@@ -117,6 +131,7 @@ export function Toolbar() {
     if (!result || result.canceled) return;
     finishProjectSave(result.data, result.path);
     setWarning(`Saved project: ${result.path}`);
+    playTypewriterReturnBell(document.settings.typewriterBellVolume);
   }
 
   async function openFdx() {
@@ -130,15 +145,24 @@ export function Toolbar() {
     if (!result || result.canceled) return;
     finishFdxSave(result.data, result.path);
     setWarning(`Saved FDX: ${result.path}`);
+    playTypewriterReturnBell(document.settings.typewriterBellVolume);
   }
 
   async function exportPdf() {
-    await window.screenwriter?.exportPdf(document, {
+    const result = await window.screenwriter?.exportPdf(document, {
       includeTitlePage: document.settings.exportIncludeTitlePage,
+      includeNotes: document.settings.exportIncludeNotes,
       includeStructureLines: true,
       includeWatermark: false,
-      matchDisplayColors: true
+      matchDisplayColors: false,
+      openAfterExport: document.settings.exportOpenFolder,
+      nolanMode: false,
+      promptForNolanMode: true
     });
+    if (result && !result.canceled) {
+      setWarning(`Exported PDF: ${result.path}`);
+      playTypewriterReturnBell(document.settings.typewriterBellVolume);
+    }
   }
 
   async function importTextPdf() {
@@ -153,7 +177,12 @@ export function Toolbar() {
     if (result && !result.canceled) {
       recordBackup(result.data);
       setWarning(`Backup created: ${result.data.path}`);
+      playTypewriterReturnBell(document.settings.typewriterBellVolume);
     }
+  }
+
+  function applyFormatPatch(patch: Partial<TextStyle>) {
+    window.dispatchEvent(new CustomEvent('scriptpilot:format-selection', { detail: patch }));
   }
 
   const saveState = dirty ? 'Unsaved' : 'Saved';
@@ -219,7 +248,21 @@ export function Toolbar() {
       </div>
       <div className="toolbar__group toolbar__screenplay">
         <ElementMenu selectedType={selectedType} onSelect={setSelectedElementType} />
-        <TextFormatControls style={selected?.style} onPatch={updateSelectedElementStyle} compact includeBackground />
+        <div className="format-menu">
+          <button
+            title="Formatting panel (Ctrl+Shift+F)"
+            className={formatOpen ? 'is-active' : ''}
+            aria-expanded={formatOpen}
+            onClick={() => setFormatOpen((value) => !value)}
+          >
+            <Type size={17} />
+          </button>
+          {formatOpen && (
+            <div className="format-menu__popover">
+              <TextFormatControls style={selected?.style} onPatch={applyFormatPatch} compact includeBackground />
+            </div>
+          )}
+        </div>
         <button
           title={document.settings.revisionMode ? 'Turn revision mode off' : 'Revision mode'}
           className={document.settings.revisionMode ? 'is-active' : ''}
@@ -256,6 +299,10 @@ export function Toolbar() {
             </button>
           );
         })}
+        <button title="Custom mode color options" onClick={() => setPanel('settings')}>
+          <SettingsIcon size={17} />
+          <span>Custom</span>
+        </button>
       </div>
       <div className="toolbar__group">
         <button title="Typewriter mode" className={document.settings.typewriterMode ? 'is-active' : ''} onClick={toggleTypewriterMode}>
@@ -371,5 +418,5 @@ function fileNameFromPath(value: string): string {
 }
 
 function playSprintChime(volume: number): void {
-  playTypewriterReturnBell(Math.max(0.35, Math.min(1, volume || 0.7)));
+  playTypewriterReturnBell(Math.max(0.15, Math.min(1, volume || 0.45)));
 }

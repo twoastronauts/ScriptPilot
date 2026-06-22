@@ -58,6 +58,13 @@ export interface TextStyle {
   backgroundColor?: string;
 }
 
+export interface InlineTextStyle {
+  id: string;
+  from: number;
+  to: number;
+  style: TextStyle;
+}
+
 export interface TitlePage {
   title: string;
   author: string;
@@ -118,10 +125,53 @@ export interface ScriptElement {
   omitted?: boolean;
   alternateText?: string;
   style?: TextStyle;
+  inlineStyles?: InlineTextStyle[];
   generatedPageBreak?: boolean;
   createdAt: string;
   updatedAt: string;
   fdx?: FdxParagraphShadow;
+}
+
+export type EditableProductionShotType = 'scripted' | 'master' | 'coverage' | 'insert' | 'custom';
+
+export interface EditableProductionShot {
+  id: string;
+  sceneId?: string;
+  sceneNumber: number;
+  order: number;
+  shotNumber: string;
+  setup: string;
+  shotType: EditableProductionShotType;
+  label: string;
+  description: string;
+  subject: string;
+  cameraAngle: string;
+  cameraMovement: string;
+  cameraEquipment: string;
+  framing: string;
+  location: string;
+  timeOfDay: string;
+  characters: string[];
+  tags: string[];
+  estimatedMinutes: number;
+  setupMinutes: number;
+  sourceElementId?: string;
+  custom?: boolean;
+}
+
+export interface EditableCallSheet {
+  id: string;
+  projectTitle: string;
+  shootDay: number;
+  title: string;
+  location: string;
+  timeOfDay: string;
+  callTime: string;
+  scenesText: string;
+  cast: string[];
+  departments: string[];
+  notes: string[];
+  custom?: boolean;
 }
 
 export interface Beat {
@@ -371,6 +421,9 @@ export interface ProjectSettings {
   headerText: string;
   footerText: string;
   exportIncludeTitlePage: boolean;
+  exportIncludeNotes: boolean;
+  exportOpenFolder: boolean;
+  exportNolanMode: boolean;
   outlineHeight: number;
   activeLineStyle: 'underline' | 'frame' | 'none';
   smartType: boolean;
@@ -384,6 +437,8 @@ export interface ProjectSettings {
   sprintChimeMinutes: number;
   themeColors?: ThemeColorSettings;
   customPdfColors: boolean;
+  tutorialMode: boolean;
+  tutorialCompleted: boolean;
   revisionMode: boolean;
   showRevisionMarks: boolean;
   showRevisionPageColors: boolean;
@@ -436,6 +491,8 @@ export interface ScriptDocument {
   revisionMemos: RevisionMemo[];
   collabRooms: CollabRoom[];
   exportPackages: ExportPackage[];
+  productionShots: EditableProductionShot[];
+  productionCallSheets: EditableCallSheet[];
   settings: ProjectSettings;
   fdxShadow?: FdxShadow;
   createdAt: string;

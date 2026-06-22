@@ -18,6 +18,8 @@ import type {
   CharacterProfile,
   CollabParticipant,
   CollabSession,
+  EditableCallSheet,
+  EditableProductionShot,
   ProductionTag,
   ProjectSettings,
   RevisionSet,
@@ -111,6 +113,8 @@ interface WorkspaceState {
   setElementType: (elementId: string, type: ScriptElementType) => void;
   setSelectedElementType: (type: ScriptElementType) => void;
   addProductionTagToSelected: (tag: Omit<ProductionTag, 'id'>) => void;
+  setProductionShots: (shots: EditableProductionShot[]) => void;
+  setProductionCallSheets: (callSheets: EditableCallSheet[]) => void;
   addScriptNoteToElement: (elementId: string, text: string) => void;
   addScriptNoteToSelected: (text: string) => void;
   toggleRevisionOnSelected: (color: string) => void;
@@ -141,6 +145,8 @@ function touch(document: ScriptDocument): ScriptDocument {
 function normalizeSettings(settings: ProjectSettings): ProjectSettings {
   const defaults = createDefaultSettings();
   const normalized = { ...defaults, ...settings };
+  if (!['day', 'night', 'midnight'].includes(normalized.viewMode)) normalized.viewMode = defaults.viewMode;
+  normalized.customPdfColors = false;
   if (settings.typewriterVolume === undefined && settings.typewriterSounds === false) normalized.typewriterVolume = 0;
   if (settings.typewriterBellVolume === undefined) normalized.typewriterBellVolume = normalized.typewriterVolume || defaults.typewriterBellVolume;
   return normalized;
@@ -189,7 +195,9 @@ function normalizeDocument(document: ScriptDocument): ScriptDocument {
     draftVersions: document.draftVersions ?? [],
     revisionMemos: document.revisionMemos ?? [],
     collabRooms: document.collabRooms ?? [],
-    exportPackages: document.exportPackages ?? []
+    exportPackages: document.exportPackages ?? [],
+    productionShots: document.productionShots ?? [],
+    productionCallSheets: document.productionCallSheets ?? []
   };
 }
 
@@ -302,14 +310,16 @@ function createGeneratedPageBreak(afterElementId: string): ScriptElement {
 
 function insertionIndexForPage(elements: ScriptElement[], targetPage: number): number {
   let weightedLines = 0;
+  let insertionIndex = elements.length;
 
   for (let index = 0; index < elements.length; index += 1) {
     const currentPage = Math.max(1, Math.ceil(weightedLines / 55));
-    if (currentPage >= targetPage) return index;
+    if (currentPage > targetPage) return insertionIndex;
+    if (currentPage === targetPage) insertionIndex = index + 1;
     weightedLines += estimateElementLines(elements[index]);
   }
 
-  return elements.length;
+  return insertionIndex;
 }
 
 function estimateElementLines(element: ScriptElement): number {
@@ -588,7 +598,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           typewriterMode: !state.document.settings.typewriterMode,
           typewriterSounds: !state.document.settings.typewriterMode ? true : state.document.settings.typewriterSounds,
           typewriterVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterVolume <= 0 ? 0.65 : state.document.settings.typewriterVolume,
-          typewriterBellVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterBellVolume <= 0 ? 0.8 : state.document.settings.typewriterBellVolume
+          typewriterBellVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterBellVolume <= 0 ? 0.45 : state.document.settings.typewriterBellVolume
         }
       }),
       dirty: true
@@ -601,7 +611,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           ...state.document.settings,
           typewriterSounds: !state.document.settings.typewriterSounds,
           typewriterVolume: state.document.settings.typewriterSounds ? 0 : Math.max(0.55, state.document.settings.typewriterVolume),
-          typewriterBellVolume: state.document.settings.typewriterSounds ? 0 : Math.max(0.65, state.document.settings.typewriterBellVolume)
+          typewriterBellVolume: state.document.settings.typewriterSounds ? 0 : Math.max(0.4, state.document.settings.typewriterBellVolume)
         }
       }),
       dirty: true
@@ -872,6 +882,22 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         dirty: true
       };
     }),
+  setProductionShots: (productionShots) =>
+    set((state) => ({
+      document: touch({
+        ...state.document,
+        productionShots
+      }),
+      dirty: true
+    })),
+  setProductionCallSheets: (productionCallSheets) =>
+    set((state) => ({
+      document: touch({
+        ...state.document,
+        productionCallSheets
+      }),
+      dirty: true
+    })),
   addScriptNoteToElement: (elementId, text) =>
     set((state) => {
       if (!elementId || !text.trim()) return state;

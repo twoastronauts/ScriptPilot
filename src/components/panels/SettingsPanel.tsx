@@ -206,6 +206,22 @@ export function SettingsPanel() {
           />
         </label>
         <label>
+          <span>Export notes</span>
+          <input
+            type="checkbox"
+            checked={document.settings.exportIncludeNotes}
+            onChange={(event) => updateSettings({ exportIncludeNotes: event.target.checked })}
+          />
+        </label>
+        <label>
+          <span>Open PDF folder</span>
+          <input
+            type="checkbox"
+            checked={document.settings.exportOpenFolder}
+            onChange={(event) => updateSettings({ exportOpenFolder: event.target.checked })}
+          />
+        </label>
+        <label>
           <span>Focus mode</span>
           <input type="checkbox" checked={document.settings.focusMode} onChange={toggleFocusMode} />
         </label>
@@ -234,6 +250,14 @@ export function SettingsPanel() {
           <select value={document.settings.dictionaryLanguage} onChange={(event) => updateSettings({ dictionaryLanguage: event.target.value })}>
             <option value="en-US">English (US)</option>
           </select>
+        </label>
+        <label>
+          <span>Tutorial mode</span>
+          <input
+            type="checkbox"
+            checked={document.settings.tutorialMode && !document.settings.tutorialCompleted}
+            onChange={(event) => updateSettings({ tutorialMode: event.target.checked, tutorialCompleted: !event.target.checked })}
+          />
         </label>
         <label>
           <span>Sprint chime</span>

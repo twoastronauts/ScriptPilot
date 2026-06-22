@@ -354,6 +354,28 @@ ipcMain.handle('file:save-fdx', async (_event, document: ScriptDocument, existin
 });
 
 ipcMain.handle('file:export-pdf', async (_event, document: ScriptDocument, options?: ExportPdfOptions): Promise<FileResult<null>> => {
+  const exportOptions: ExportPdfOptions = {
+    ...options,
+    matchDisplayColors: false
+  };
+
+  if (options?.promptForNolanMode) {
+    const choice = await dialog.showMessageBox({
+      type: 'question',
+      title: 'Export PDF',
+      message: 'Export PDF options',
+      detail: 'Normal exports use white pages with black screenplay text.',
+      buttons: ['Continue', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1,
+      checkboxLabel: 'Nolan proof style: red background with black text',
+      checkboxChecked: Boolean(options.nolanMode)
+    });
+
+    if (choice.response === 1) return canceled(null);
+    exportOptions.nolanMode = Boolean(choice.checkboxChecked);
+  }
+
   const result = await dialog.showSaveDialog({
     title: 'Export PDF',
     defaultPath: `${document.title || 'Untitled'}.pdf`,
@@ -361,7 +383,7 @@ ipcMain.handle('file:export-pdf', async (_event, document: ScriptDocument, optio
   });
   if (result.canceled || !result.filePath) return canceled(null);
 
-  const html = createPrintableHtml(document, options);
+  const html = createPrintableHtml(document, exportOptions);
   const printWindow = new BrowserWindow({
     show: false,
     webPreferences: {
@@ -385,6 +407,9 @@ ipcMain.handle('file:export-pdf', async (_event, document: ScriptDocument, optio
   });
   await writeFile(result.filePath, pdf);
   printWindow.destroy();
+  if (exportOptions.openAfterExport ?? true) {
+    shell.showItemInFolder(result.filePath);
+  }
 
   return { canceled: false, path: result.filePath, data: null };
 });

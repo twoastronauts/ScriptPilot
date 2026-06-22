@@ -25,6 +25,19 @@ export function TitlePageEditor() {
     updateTitlePage({ [field]: value } as Partial<typeof titlePage>);
   }
 
+  function handleImageDrop(event: React.DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith('image/'));
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        updateTitlePage({ fields: { ...titlePage.fields, CoverImage: reader.result } });
+      }
+    };
+    reader.readAsDataURL(file);
+  }
+
   return (
     <section className="title-page-main" aria-label="Editable title page">
       <div className="title-page-tools">
@@ -42,7 +55,8 @@ export function TitlePageEditor() {
           includeBackground
         />
       </div>
-      <div className="title-page-sheet">
+      <div className="title-page-sheet" onDragOver={(event) => event.preventDefault()} onDrop={handleImageDrop}>
+        {titlePage.fields?.CoverImage && <img className="title-page-sheet__image" src={titlePage.fields.CoverImage} alt="" />}
         <div className="title-page-sheet__center">
           <EditableBlock
             className="title-page-sheet__title"
