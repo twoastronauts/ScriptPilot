@@ -6,7 +6,8 @@ import { suggestSynonyms } from '@/shared/synonyms';
 import { correctionSpan, suggestCorrections } from '@/shared/proofing';
 import { elementsToProseMirrorDoc, prosemirrorDocToElements } from '@/prosemirror/schema';
 import { screenplayAutoformat } from '@/prosemirror/autoformat';
-import { EditorState } from 'prosemirror-state';
+import { EditorState, TextSelection } from 'prosemirror-state';
+import { splitScreenplayElement } from '@/prosemirror/keymap';
 
 describe('screenplay helpers', () => {
   it('infers common screenplay line types', () => {
@@ -90,6 +91,70 @@ describe('screenplay helpers', () => {
     const roundTripped = prosemirrorDocToElements(doc, [first, pageBreak, second]);
     expect(roundTripped.map((element) => element.id)).toEqual(['scene-1', 'break-1', 'action-2']);
     expect(roundTripped[1]).toMatchObject({ type: 'page-break', generatedPageBreak: true });
+  });
+
+  it('splits screenplay lines on Enter and keeps the cursor in the new line', () => {
+    const action = { ...createScriptElement('action', 'A door opens.'), id: 'action-1' };
+    const doc = elementsToProseMirrorDoc([action]);
+    let state = EditorState.create({ schema: doc.type.schema, doc });
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, elementTextStart(doc, 'action-1') + action.text.length)));
+
+    const handled = splitScreenplayElement(state, (transaction) => {
+      state = state.apply(transaction);
+    });
+    const roundTripped = prosemirrorDocToElements(state.doc, [action]);
+
+    expect(handled).toBe(true);
+    expect(roundTripped).toHaveLength(2);
+    expect(roundTripped.map((element) => element.type)).toEqual(['action', 'action']);
+    expect(state.selection.$from.parent.attrs.id).toBe(roundTripped[1].id);
+  });
+
+  it('turns Enter after a transition into a fresh scene heading line', () => {
+    const transition = { ...createScriptElement('transition', 'CUT TO:'), id: 'transition-1' };
+    const doc = elementsToProseMirrorDoc([transition]);
+    let state = EditorState.create({ schema: doc.type.schema, doc });
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, elementTextStart(doc, 'transition-1') + transition.text.length)));
+
+    const handled = splitScreenplayElement(state, (transaction) => {
+      state = state.apply(transaction);
+    });
+    const roundTripped = prosemirrorDocToElements(state.doc, [transition]);
+
+    expect(handled).toBe(true);
+    expect(roundTripped.map((element) => element.type)).toEqual(['transition', 'scene-heading']);
+    expect(roundTripped[1].text).toBe('');
+    expect(state.selection.$from.parent.attrs.scriptType).toBe('scene-heading');
+  });
+
+  it('preserves transition text when Enter is pressed from inside the line', () => {
+    const transition = { ...createScriptElement('transition', 'CUT TO:'), id: 'transition-1' };
+    const doc = elementsToProseMirrorDoc([transition]);
+    let state = EditorState.create({ schema: doc.type.schema, doc });
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, elementTextStart(doc, 'transition-1'))));
+
+    splitScreenplayElement(state, (transaction) => {
+      state = state.apply(transaction);
+    });
+    const roundTripped = prosemirrorDocToElements(state.doc, [transition]);
+
+    expect(roundTripped.map((element) => element.text)).toEqual(['CUT TO:', '']);
+    expect(roundTripped.map((element) => element.type)).toEqual(['transition', 'scene-heading']);
+  });
+
+  it('splits text at the cursor instead of losing the trailing words', () => {
+    const action = { ...createScriptElement('action', 'A door opens.'), id: 'action-1' };
+    const doc = elementsToProseMirrorDoc([action]);
+    let state = EditorState.create({ schema: doc.type.schema, doc });
+    state = state.apply(state.tr.setSelection(TextSelection.create(state.doc, elementTextStart(doc, 'action-1') + 'A door'.length)));
+
+    splitScreenplayElement(state, (transaction) => {
+      state = state.apply(transaction);
+    });
+    const roundTripped = prosemirrorDocToElements(state.doc, [action]);
+
+    expect(roundTripped.map((element) => element.text)).toEqual(['A door', ' opens.']);
+    expect(state.selection.$from.parentOffset).toBe(0);
   });
 
   it('estimates at least one page', () => {

@@ -8,7 +8,7 @@ import { keymap } from 'prosemirror-keymap';
 import { clsx } from 'clsx';
 import type { Node as ProseMirrorNode } from 'prosemirror-model';
 import { elementsToProseMirrorDoc, prosemirrorDocToElements, screenplaySchema, type PageChromeOptions } from '@/prosemirror/schema';
-import { screenplayKeymap } from '@/prosemirror/keymap';
+import { screenplayKeymap, splitScreenplayElement } from '@/prosemirror/keymap';
 import { screenplayAutoformat } from '@/prosemirror/autoformat';
 import { useWorkspace } from '@/store/workspace';
 import { ELEMENT_LABELS, estimatePageCount } from '@/shared/screenplay';
@@ -106,9 +106,7 @@ export function ScreenplayEditor() {
       showHeaderFooter: document.settings.showHeaderFooter,
       showPageNumbers: document.settings.showPageNumbers,
       pageNumberStart: document.settings.pageNumberStart,
-      pageMode: document.settings.pageMode,
-      sprintActive: Boolean(sprintStartedAt),
-      sprintElementId: selectedElementId
+      pageMode: document.settings.pageMode
     }),
     [
       document.title,
@@ -117,9 +115,7 @@ export function ScreenplayEditor() {
       document.settings.pageMode,
       document.settings.pageNumberStart,
       document.settings.showHeaderFooter,
-      document.settings.showPageNumbers,
-      selectedElementId,
-      sprintStartedAt
+      document.settings.showPageNumbers
     ]
   );
   const documentRef = useRef(document);
@@ -659,7 +655,8 @@ export function ScreenplayEditor() {
         if (event.key === 'Enter' && view.state.selection.$from.parent.attrs.scriptType === 'transition') {
           menuRef.current = null;
           setSmartTypeMenu(null);
-          return false;
+          event.preventDefault();
+          return splitScreenplayElement(view.state, view.dispatch, view);
         }
         if (event.key === 'ArrowDown') {
           event.preventDefault();
@@ -707,7 +704,6 @@ export function ScreenplayEditor() {
     setElements,
     setSelectedElement,
     showSpellingMenu,
-    pageChromeOptions,
     updateSmartTypeMenu
   ]);
 
@@ -763,6 +759,7 @@ export function ScreenplayEditor() {
   useEffect(() => {
     const view = viewRef.current;
     if (!view || !selectedElementId) return;
+    if (view.hasFocus()) return;
     const currentId = view.state.selection.$from.parent.attrs.id as string | undefined;
     if (currentId === selectedElementId) return;
     const selection = createSelectionNearElement(view.state.doc, selectedElementId, 0);
