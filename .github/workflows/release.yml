@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -78,3 +78,53 @@ jobs:
             release/*.exe
             release/*.dmg
             release/*.zip
+
+  publish-release:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: v0.2.0
+      RELEASE_TITLE: Script Pilot V02 0.2.0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download installers
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-upload
+          cp release-artifacts/Script-Pilot-V02-0.2.0-x64.exe release-upload/Script-Pilot-V02-0.2.0-Windows-x64.exe
+          cp release-artifacts/Script-Pilot-V02-0.2.0-universal.dmg release-upload/Script-Pilot-V02-0.2.0-macOS-universal.dmg
+          cat > release-notes.md <<'NOTES'
+          Latest Script Pilot V02 installer refresh.
+
+          Assets:
+          - Script-Pilot-V02-0.2.0-Windows-x64.exe
+          - Script-Pilot-V02-0.2.0-macOS-universal.dmg
+
+          The macOS build is unsigned/unnotarized until Apple signing credentials are added.
+          NOTES
+
+      - name: Create or update release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$RELEASE_TAG" --force
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-upload/* --clobber
+            gh release edit "$RELEASE_TAG" --title "$RELEASE_TITLE" --notes-file release-notes.md --latest
+          else
+            gh release create "$RELEASE_TAG" release-upload/* --title "$RELEASE_TITLE" --notes-file release-notes.md --latest
+          fi
