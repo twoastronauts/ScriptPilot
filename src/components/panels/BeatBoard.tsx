@@ -195,6 +195,15 @@ export function BeatBoard() {
         if (event.data.size > 0) audioChunksRef.current.push(event.data);
       });
       recorder.addEventListener('stop', () => {
+        if (!audioChunksRef.current.length) {
+          setWarning('Recording stopped before any audio was captured. Check microphone permission and input level.');
+          audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+          audioStreamRef.current = null;
+          recorderRef.current = null;
+          audioChunksRef.current = [];
+          setRecordingBeatId(null);
+          return;
+        }
         const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || mimeType || 'audio/webm' });
         readAudio(blob, (audioDataUrl) => {
           updateBeat({
@@ -211,7 +220,7 @@ export function BeatBoard() {
         audioChunksRef.current = [];
         setRecordingBeatId(null);
       });
-      recorder.start();
+      recorder.start(250);
       setRecordingBeatId(beat.id);
       setRecordingSeconds(0);
     } catch (error) {

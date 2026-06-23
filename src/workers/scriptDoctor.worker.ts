@@ -25,6 +25,10 @@ self.addEventListener('message', (event: MessageEvent<ScriptDoctorWorkerRequest>
   try {
     const leanDocument = {
       ...document,
+      elements: document.elements.map((element) => ({
+        ...element,
+        fdx: undefined
+      })),
       fdxShadow: document.fdxShadow
         ? {
             ...document.fdxShadow,

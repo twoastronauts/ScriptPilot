@@ -35,11 +35,11 @@ export function createDefaultSettings(): ProjectSettings {
   return {
     format: 'screenplay',
     viewMode: 'midnight',
-    focusMode: false,
+    focusMode: true,
     typewriterMode: true,
     typewriterSounds: true,
-    typewriterVolume: 0.7,
-    typewriterBellVolume: 0.45,
+    typewriterVolume: 1,
+    typewriterBellVolume: 0.25,
     pageMode: 'pages',
     showPageNumbers: true,
     pageNumberStart: 1,
@@ -102,7 +102,7 @@ export function createDefaultNavigatorTabs(): NavigatorTab[] {
 export function createDefaultOutlineLanes(): OutlineLane[] {
   return [
     { id: uuid(), name: 'Acts', color: '#2f6fed', elementTypes: ['scene-heading'], collapsed: false },
-    { id: uuid(), name: 'Sequences', color: '#0f9f83', elementTypes: ['scene-heading', 'shot'], collapsed: false },
+    { id: uuid(), name: 'Beats', color: '#0f9f83', elementTypes: ['scene-heading', 'shot'], collapsed: false },
     { id: uuid(), name: 'Script', color: '#c24c3a', elementTypes: ['scene-heading', 'action', 'character', 'dialogue'], collapsed: false }
   ];
 }

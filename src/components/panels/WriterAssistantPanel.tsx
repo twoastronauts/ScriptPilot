@@ -24,48 +24,58 @@ export function WriterAssistantPanel() {
     requestIdRef.current = requestId;
     setAnalyzing(true);
     setAnalysisError(null);
+    const leanDocument = leanDoctorDocument(document);
 
-    if (typeof Worker !== 'undefined') {
-      workerRef.current?.terminate();
-      const worker = new Worker(new URL('../../workers/scriptDoctor.worker.ts', import.meta.url), { type: 'module' });
-      workerRef.current = worker;
-      worker.onmessage = (event: MessageEvent<ScriptDoctorWorkerResult | ScriptDoctorWorkerError>) => {
-        if (event.data.requestId !== requestId) return;
-        if ('error' in event.data) {
-          setAnalysisError(event.data.error);
-        } else {
-          setAnalysis({ report: event.data.report, stats: event.data.stats, pagination: event.data.pagination });
-        }
-        setAnalyzing(false);
-        worker.terminate();
-        if (workerRef.current === worker) workerRef.current = null;
-      };
-      worker.onerror = (error) => {
-        if (requestIdRef.current !== requestId) return;
-        setAnalysisError(error.message || 'Script Doctor worker failed.');
-        setAnalyzing(false);
-        worker.terminate();
-        if (workerRef.current === worker) workerRef.current = null;
-      };
-      const payload: ScriptDoctorWorkerRequest = {
-        requestId,
-        document: leanDoctorDocument(document)
-      };
-      worker.postMessage(payload);
-      return () => worker.terminate();
-    }
+    const startAnalysis = window.setTimeout(() => {
+      if (typeof Worker !== 'undefined') {
+        workerRef.current?.terminate();
+        const worker = new Worker(new URL('../../workers/scriptDoctor.worker.ts', import.meta.url), { type: 'module' });
+        workerRef.current = worker;
+        worker.onmessage = (event: MessageEvent<ScriptDoctorWorkerResult | ScriptDoctorWorkerError>) => {
+          if (event.data.requestId !== requestId) return;
+          if ('error' in event.data) {
+            setAnalysisError(event.data.error);
+          } else {
+            setAnalysis({ report: event.data.report, stats: event.data.stats, pagination: event.data.pagination });
+          }
+          setAnalyzing(false);
+          worker.terminate();
+          if (workerRef.current === worker) workerRef.current = null;
+        };
+        worker.onerror = (error) => {
+          if (requestIdRef.current !== requestId) return;
+          try {
+            setAnalysis(computeDoctorAnalysis(leanDocument));
+            setAnalysisError('Script Doctor worker fell back to safe imported-script mode.');
+          } catch {
+            setAnalysisError(error.message || 'Script Doctor worker failed.');
+          }
+          setAnalyzing(false);
+          worker.terminate();
+          if (workerRef.current === worker) workerRef.current = null;
+        };
+        const payload: ScriptDoctorWorkerRequest = {
+          requestId,
+          document: leanDocument
+        };
+        worker.postMessage(payload);
+        return;
+      }
 
-    const timeout = window.setTimeout(() => {
-      if (requestIdRef.current !== requestId) return;
       try {
-        setAnalysis(computeDoctorAnalysis(document));
+        setAnalysis(computeDoctorAnalysis(leanDocument));
       } catch (error) {
         setAnalysisError(error instanceof Error ? error.message : 'Script Doctor failed.');
       } finally {
         setAnalyzing(false);
       }
-    }, 40);
-    return () => window.clearTimeout(timeout);
+    }, document.fdxShadow ? 240 : 80);
+
+    return () => {
+      window.clearTimeout(startAnalysis);
+      workerRef.current?.terminate();
+      workerRef.current = null;
+    };
   }, [documentKey]);
 
   const { report, stats, pagination } = analysis;
@@ -211,6 +221,10 @@ function createPendingAnalysis(document: ScriptDocument): DoctorAnalysis {
 function leanDoctorDocument(document: ScriptDocument): ScriptDocument {
   return {
     ...document,
+    elements: document.elements.map((element) => ({
+      ...element,
+      fdx: undefined
+    })),
     fdxShadow: document.fdxShadow
       ? {
           ...document.fdxShadow,

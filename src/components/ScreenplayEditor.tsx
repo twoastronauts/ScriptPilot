@@ -98,6 +98,7 @@ export function ScreenplayEditor() {
   const elements = document.elements;
   const pageCount = useMemo(() => Math.max(1, estimatePageCount(elements)), [elements]);
   const selectedPage = useMemo(() => estimatePageForElement(elements, selectedElementId), [elements, selectedElementId]);
+  const pageActColors = useMemo(() => buildPageActColors(document), [document.structureRanges, document.settings.pageNumberStart]);
   const pageChromeOptions = useMemo<PageChromeOptions>(
     () => ({
       documentTitle: document.title,
@@ -106,7 +107,10 @@ export function ScreenplayEditor() {
       showHeaderFooter: document.settings.showHeaderFooter,
       showPageNumbers: document.settings.showPageNumbers,
       pageNumberStart: document.settings.pageNumberStart,
-      pageMode: document.settings.pageMode
+      pageMode: document.settings.pageMode,
+      sprintActive: Boolean(sprintStartedAt),
+      sprintElementId: selectedElementId,
+      pageActColors
     }),
     [
       document.title,
@@ -115,7 +119,10 @@ export function ScreenplayEditor() {
       document.settings.pageMode,
       document.settings.pageNumberStart,
       document.settings.showHeaderFooter,
-      document.settings.showPageNumbers
+      document.settings.showPageNumbers,
+      pageActColors,
+      selectedElementId,
+      sprintStartedAt
     ]
   );
   const documentRef = useRef(document);
@@ -1094,6 +1101,23 @@ function estimatePageForElement(elements: ScriptElement[], selectedElementId?: s
     weightedLines += Math.max(hardLines, softLines) * typeWeight;
   }
   return Math.max(1, Math.ceil(weightedLines / 55));
+}
+
+function buildPageActColors(document: { structureRanges: Array<{ kind: string; visible: boolean; startPage?: number; endPage?: number; color: string }>; settings: { pageNumberStart: number } }): Record<number, string> {
+  const colors: Record<number, string> = {};
+  const actRanges = document.structureRanges
+    .filter((range) => range.visible && range.kind === 'act' && range.startPage && range.endPage)
+    .sort((first, second) => (first.startPage ?? 1) - (second.startPage ?? 1));
+
+  for (const range of actRanges) {
+    const startPage = Math.max(1, Math.round(range.startPage ?? 1));
+    const endPage = Math.max(startPage, Math.round(range.endPage ?? startPage));
+    for (let page = startPage; page <= endPage; page += 1) {
+      colors[page] = range.color;
+    }
+  }
+
+  return colors;
 }
 
 function lineWidthForElement(type: ScriptElementType): number {

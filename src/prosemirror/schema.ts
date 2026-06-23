@@ -11,6 +11,7 @@ export interface PageChromeOptions {
   pageMode?: 'pages' | 'continuous';
   sprintActive?: boolean;
   sprintElementId?: string;
+  pageActColors?: Record<number, string>;
 }
 
 export const screenplaySchema = new Schema({
@@ -27,7 +28,8 @@ export const screenplaySchema = new Schema({
         showHeaderFooter: { default: true },
         showPageNumbers: { default: true },
         pageBreakIdBefore: { default: null },
-        pageBreakGeneratedBefore: { default: false }
+        pageBreakGeneratedBefore: { default: false },
+        actColor: { default: '' }
       },
       parseDOM: [
         {
@@ -42,7 +44,8 @@ export const screenplaySchema = new Schema({
               showHeaderFooter: element.dataset.showHeaderFooter !== 'false',
               showPageNumbers: element.dataset.showPageNumbers !== 'false',
               pageBreakIdBefore: element.dataset.pageBreakIdBefore || null,
-              pageBreakGeneratedBefore: element.dataset.pageBreakGeneratedBefore === 'true'
+              pageBreakGeneratedBefore: element.dataset.pageBreakGeneratedBefore === 'true',
+              actColor: element.dataset.actColor ?? ''
             };
           }
         }
@@ -60,7 +63,9 @@ export const screenplaySchema = new Schema({
           'data-show-header-footer': String(showHeaderFooter),
           'data-show-page-numbers': String(showPageNumbers),
           'data-page-break-id-before': node.attrs.pageBreakIdBefore ?? '',
-          'data-page-break-generated-before': String(Boolean(node.attrs.pageBreakGeneratedBefore))
+          'data-page-break-generated-before': String(Boolean(node.attrs.pageBreakGeneratedBefore)),
+          'data-act-color': node.attrs.actColor ?? '',
+          style: node.attrs.actColor ? `--script-act-color:${node.attrs.actColor}` : ''
         };
 
         return [
@@ -90,7 +95,8 @@ export const screenplaySchema = new Schema({
         formatStyle: { default: null },
         generatedPageBreak: { default: false },
         sprintClass: { default: '' },
-        noteCount: { default: 0 }
+        noteCount: { default: 0 },
+        notePreview: { default: '' }
       },
       parseDOM: [
         {
@@ -106,7 +112,8 @@ export const screenplaySchema = new Schema({
               omitted: element.dataset.omitted === 'true',
               formatStyle: parseFormatStyle(element.dataset.formatStyle),
               generatedPageBreak: element.dataset.generatedPageBreak === 'true',
-              noteCount: Number(element.dataset.noteCount) || 0
+              noteCount: Number(element.dataset.noteCount) || 0,
+              notePreview: element.dataset.notePreview ?? ''
             };
           }
         }
@@ -124,9 +131,27 @@ export const screenplaySchema = new Schema({
           'data-format-style': node.attrs.formatStyle ? JSON.stringify(node.attrs.formatStyle) : '',
           'data-generated-page-break': String(Boolean(node.attrs.generatedPageBreak)),
           'data-note-count': String(Number(node.attrs.noteCount) || 0),
+          'data-note-preview': node.attrs.notePreview ?? '',
           style: [node.attrs.revisionColor ? `--revision:${node.attrs.revisionColor}` : '', textStyleToCssVars(node.attrs.formatStyle)].filter(Boolean).join(';')
         };
-        return ['p', attrs, 0];
+        const noteCount = Number(node.attrs.noteCount) || 0;
+        if (!noteCount) return ['p', attrs, 0];
+        return [
+          'p',
+          attrs,
+          [
+            'span',
+            {
+              class: 'script-note-marker',
+              contenteditable: 'false',
+              'data-note-preview': node.attrs.notePreview ?? '',
+              title: node.attrs.notePreview ?? `${noteCount} note${noteCount === 1 ? '' : 's'}`,
+              'aria-label': node.attrs.notePreview ?? `${noteCount} note${noteCount === 1 ? '' : 's'}`
+            },
+            String(noteCount)
+          ],
+          0
+        ];
       }
     }
   },
@@ -235,15 +260,17 @@ function splitElementsIntoPages(elements: ScriptElement[]): Array<{ breakBefore?
 function pageAttrs(pageIndex: number, breakBefore: ScriptElement | undefined, options: PageChromeOptions) {
   const documentTitle = options.documentTitle ?? '';
   const headerText = options.headerText || documentTitle;
+  const pageNumber = (options.pageNumberStart ?? 1) + pageIndex;
   return {
     pageIndex,
-    pageNumber: (options.pageNumberStart ?? 1) + pageIndex,
+    pageNumber,
     headerText,
     footerText: options.footerText ?? '',
     showHeaderFooter: options.showHeaderFooter ?? true,
     showPageNumbers: options.showPageNumbers ?? true,
     pageBreakIdBefore: breakBefore?.id ?? null,
-    pageBreakGeneratedBefore: Boolean(breakBefore?.generatedPageBreak)
+    pageBreakGeneratedBefore: Boolean(breakBefore?.generatedPageBreak),
+    actColor: options.pageActColors?.[pageNumber] ?? ''
   };
 }
 
@@ -259,10 +286,18 @@ function elementToProseMirrorNode(element: ScriptElement, sprintClass = '') {
       formatStyle: element.style ?? null,
       generatedPageBreak: Boolean(element.generatedPageBreak),
       sprintClass,
-      noteCount: element.notes?.filter((note) => !note.resolved).length ?? 0
+      noteCount: element.notes?.filter((note) => !note.resolved).length ?? 0,
+      notePreview: notePreviewForElement(element)
     },
     element.text ? textNodesWithInlineStyles(element.text, element.inlineStyles) : undefined
   );
+}
+
+function notePreviewForElement(element: ScriptElement): string {
+  const notes = (element.notes ?? []).filter((note) => !note.resolved && note.text.trim());
+  if (!notes.length) return '';
+  const preview = notes.map((note, index) => `${index + 1}. ${note.text.trim()}`).join('\n');
+  return preview.length > 260 ? `${preview.slice(0, 257).trimEnd()}...` : preview;
 }
 
 function sprintClassesForElements(elements: ScriptElement[], options: PageChromeOptions): Map<string, string> {

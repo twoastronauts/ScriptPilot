@@ -110,6 +110,7 @@ interface WorkspaceState {
   updateCharacter: (characterId: string, patch: Partial<CharacterProfile>) => void;
   updateCharacterArc: (characterId: string, patch: Partial<CharacterArc>) => void;
   renameCharacter: (characterId: string, nextName: string, applyToScript: boolean) => void;
+  deleteCharacter: (characterId: string, removeFromScript?: boolean) => void;
   setElementType: (elementId: string, type: ScriptElementType) => void;
   setSelectedElementType: (type: ScriptElementType) => void;
   addProductionTagToSelected: (tag: Omit<ProductionTag, 'id'>) => void;
@@ -117,6 +118,8 @@ interface WorkspaceState {
   setProductionCallSheets: (callSheets: EditableCallSheet[]) => void;
   addScriptNoteToElement: (elementId: string, text: string) => void;
   addScriptNoteToSelected: (text: string) => void;
+  updateScriptNote: (elementId: string, noteId: string, patch: { text?: string; color?: string; resolved?: boolean }) => void;
+  deleteScriptNote: (elementId: string, noteId: string) => void;
   toggleRevisionOnSelected: (color: string) => void;
   setRevisionMode: (enabled: boolean) => void;
   setActiveRevisionSet: (revisionId: string) => void;
@@ -147,8 +150,10 @@ function normalizeSettings(settings: ProjectSettings): ProjectSettings {
   const normalized = { ...defaults, ...settings };
   if (!['day', 'night', 'midnight'].includes(normalized.viewMode)) normalized.viewMode = defaults.viewMode;
   normalized.customPdfColors = false;
+  if (settings.typewriterVolume === undefined || settings.typewriterVolume === 0.7) normalized.typewriterVolume = defaults.typewriterVolume;
+  if (settings.typewriterBellVolume === undefined || settings.typewriterBellVolume === 0.45) normalized.typewriterBellVolume = defaults.typewriterBellVolume;
   if (settings.typewriterVolume === undefined && settings.typewriterSounds === false) normalized.typewriterVolume = 0;
-  if (settings.typewriterBellVolume === undefined) normalized.typewriterBellVolume = normalized.typewriterVolume || defaults.typewriterBellVolume;
+  if (settings.typewriterBellVolume === undefined && settings.typewriterSounds === false) normalized.typewriterBellVolume = 0;
   return normalized;
 }
 
@@ -218,6 +223,7 @@ function normalizeBeat(beat: Beat): Beat {
 function normalizeCharacter(character: CharacterProfile): CharacterProfile {
   return {
     ...character,
+    hidden: Boolean(character.hidden),
     aliases: character.aliases ?? [],
     description: character.description ?? '',
     demographics: character.demographics ?? '',
@@ -273,25 +279,48 @@ function autoPaginateElements(elements: ScriptElement[]): ScriptElement[] {
   const paginated: ScriptElement[] = [];
   let pageLines = 0;
 
-  for (const element of source) {
-    if (element.type === 'page-break') {
-      paginated.push(element);
+  for (let index = 0; index < source.length; index += 1) {
+    const group = paginationGroupAt(source, index);
+    const first = group[0];
+    if (!first) continue;
+
+    if (first.type === 'page-break') {
+      paginated.push(first);
       pageLines = 0;
       continue;
     }
 
-    const neededLines = Math.max(1, Math.ceil(estimateElementLines(element)));
+    const neededLines = Math.max(1, Math.ceil(group.reduce((sum, element) => sum + estimateElementLines(element), 0)));
     if (paginated.length > 0 && pageLines > 0 && pageLines + neededLines > EDITOR_LINES_PER_PAGE) {
       const previous = paginated[paginated.length - 1];
       paginated.push(createGeneratedPageBreak(previous.id));
       pageLines = 0;
     }
 
-    paginated.push(element);
+    paginated.push(...group);
     pageLines += neededLines;
+    index += group.length - 1;
   }
 
   return paginated;
+}
+
+function paginationGroupAt(elements: ScriptElement[], index: number): ScriptElement[] {
+  const element = elements[index];
+  if (!element) return [];
+  if (element.type !== 'character') return [element];
+
+  const group = [element];
+  for (let cursor = index + 1; cursor < elements.length; cursor += 1) {
+    const next = elements[cursor];
+    if (!next || next.type === 'page-break') break;
+    if (next.type === 'parenthetical' || next.type === 'dialogue') {
+      group.push(next);
+      continue;
+    }
+    break;
+  }
+  return group;
 }
 
 function createGeneratedPageBreak(afterElementId: string): ScriptElement {
@@ -597,8 +626,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
           ...state.document.settings,
           typewriterMode: !state.document.settings.typewriterMode,
           typewriterSounds: !state.document.settings.typewriterMode ? true : state.document.settings.typewriterSounds,
-          typewriterVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterVolume <= 0 ? 0.65 : state.document.settings.typewriterVolume,
-          typewriterBellVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterBellVolume <= 0 ? 0.45 : state.document.settings.typewriterBellVolume
+          typewriterVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterVolume <= 0 ? 1 : state.document.settings.typewriterVolume,
+          typewriterBellVolume: !state.document.settings.typewriterMode && state.document.settings.typewriterBellVolume <= 0 ? 0.25 : state.document.settings.typewriterBellVolume
         }
       }),
       dirty: true
@@ -610,8 +639,8 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         settings: {
           ...state.document.settings,
           typewriterSounds: !state.document.settings.typewriterSounds,
-          typewriterVolume: state.document.settings.typewriterSounds ? 0 : Math.max(0.55, state.document.settings.typewriterVolume),
-          typewriterBellVolume: state.document.settings.typewriterSounds ? 0 : Math.max(0.4, state.document.settings.typewriterBellVolume)
+          typewriterVolume: state.document.settings.typewriterSounds ? 0 : Math.max(1, state.document.settings.typewriterVolume),
+          typewriterBellVolume: state.document.settings.typewriterSounds ? 0 : Math.max(0.25, state.document.settings.typewriterBellVolume)
         }
       }),
       dirty: true
@@ -850,6 +879,41 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
         dirty: true
       };
     }),
+  deleteCharacter: (characterId, removeFromScript = false) =>
+    set((state) => {
+      const existing = state.document.characters.find((character) => character.id === characterId);
+      const derivedName = characterId.startsWith('derived-') ? characterId.slice('derived-'.length) : '';
+      const targetName = normalizeCharacterName(existing?.name ?? derivedName);
+      if (!targetName) return state;
+
+      const characters = existing
+        ? state.document.characters.filter((character) => character.id !== characterId)
+        : [
+            ...state.document.characters,
+            {
+              id: `hidden:${targetName}`,
+              name: targetName,
+              aliases: [],
+              color: '#66737d',
+              hidden: true,
+              description: '',
+              demographics: '',
+              notes: '',
+              arc: createDefaultCharacterArc()
+            }
+          ];
+
+      return {
+        document: touch({
+          ...state.document,
+          characters,
+          elements: removeFromScript
+            ? state.document.elements.filter((element) => !(element.type === 'character' && normalizeCharacterName(element.text) === targetName))
+            : state.document.elements
+        }),
+        dirty: true
+      };
+    }),
   setElementType: (elementId, type) =>
     set((state) => {
       if (!elementId) return state;
@@ -924,6 +988,38 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     const elementId = get().selectedElementId;
     if (elementId) get().addScriptNoteToElement(elementId, text);
   },
+  updateScriptNote: (elementId, noteId, patch) =>
+    set((state) => ({
+      document: touch({
+        ...state.document,
+        elements: state.document.elements.map((element) =>
+          element.id === elementId
+            ? {
+                ...element,
+                notes: element.notes.map((note) => (note.id === noteId ? { ...note, ...patch, text: patch.text ?? note.text } : note)),
+                updatedAt: new Date().toISOString()
+              }
+            : element
+        )
+      }),
+      dirty: true
+    })),
+  deleteScriptNote: (elementId, noteId) =>
+    set((state) => ({
+      document: touch({
+        ...state.document,
+        elements: state.document.elements.map((element) =>
+          element.id === elementId
+            ? {
+                ...element,
+                notes: element.notes.filter((note) => note.id !== noteId),
+                updatedAt: new Date().toISOString()
+              }
+            : element
+        )
+      }),
+      dirty: true
+    })),
   toggleRevisionOnSelected: (color) =>
     set((state) => {
       if (!state.selectedElementId) return state;

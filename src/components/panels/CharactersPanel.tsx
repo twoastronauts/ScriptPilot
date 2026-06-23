@@ -3,13 +3,14 @@ import { analyzeDialogue } from '@/shared/dialogueStudio';
 import { createDefaultCharacterArc } from '@/shared/defaultDocument';
 import { useWorkspace } from '@/store/workspace';
 import type * as React from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { CharacterProfile } from '@/shared/types';
 
 export function CharactersPanel() {
-  const { document, addCharacter, updateCharacter, updateCharacterArc, renameCharacter } = useWorkspace();
+  const { document, addCharacter, updateCharacter, updateCharacterArc, renameCharacter, deleteCharacter } = useWorkspace();
   const [pendingRename, setPendingRename] = useState<{ id: string; from: string; to: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
   const [nameDrafts, setNameDrafts] = useState<Record<string, string>>({});
   const stats = computeWritingStats(document);
   const statsByName = useMemo(() => new Map(stats.characters.map((character) => [character.name, character])), [stats.characters]);
@@ -46,6 +47,9 @@ export function CharactersPanel() {
               }}
             />
             <input aria-label="Character color" type="color" value={profile.color} onChange={(event) => updateCharacter(profile.id, { color: event.target.value })} />
+            <button className="icon-button danger" title={`Delete ${profile.name}`} aria-label={`Delete ${profile.name}`} onClick={() => setPendingDelete({ id: profile.id, name: profile.name })}>
+              <Trash2 size={14} />
+            </button>
             <span>{characterStats?.scenes ?? 0} scenes</span>
             <small>{characterStats?.interactions.length ? `With ${characterStats.interactions.join(', ')}` : 'No interactions yet'}</small>
             <small>{dialogue ? `${dialogue.wordCount} dialogue words / ${dialogue.averageWordsPerLine} avg` : 'No dialogue analysis yet'}</small>
@@ -111,14 +115,46 @@ export function CharactersPanel() {
           </div>
         </div>
       )}
+      {pendingDelete && (
+        <div className="confirm-scrim" role="dialog" aria-modal="true" aria-label="Confirm character deletion">
+          <div className="confirm-dialog">
+            <strong>Remove character?</strong>
+            <span>
+              Remove {pendingDelete.name} from the Characters panel? You can hide the profile only, or also remove matching character cue lines from the script.
+            </span>
+            <div className="segmented">
+              <button
+                onClick={() => {
+                  deleteCharacter(pendingDelete.id, false);
+                  setPendingDelete(null);
+                }}
+              >
+                Hide profile
+              </button>
+              <button
+                className="danger"
+                onClick={() => {
+                  deleteCharacter(pendingDelete.id, true);
+                  setPendingDelete(null);
+                }}
+              >
+                Remove cues
+              </button>
+              <button onClick={() => setPendingDelete(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
 
 function mergeCharacterProfiles(profiles: CharacterProfile[], scriptNames: string[]): CharacterProfile[] {
-  const byName = new Map(profiles.map((profile) => [profile.name, profile]));
+  const visibleProfiles = profiles.filter((profile) => !profile.hidden);
+  const hiddenNames = new Set(profiles.filter((profile) => profile.hidden).map((profile) => profile.name));
+  const byName = new Map(visibleProfiles.map((profile) => [profile.name, profile]));
   const derived = scriptNames
-    .filter((name) => !byName.has(name))
+    .filter((name) => !byName.has(name) && !hiddenNames.has(name))
     .map((name, index) => ({
       id: `derived-${name}`,
       name,
@@ -128,5 +164,5 @@ function mergeCharacterProfiles(profiles: CharacterProfile[], scriptNames: strin
       demographics: '',
       arc: createDefaultCharacterArc()
     }));
-  return [...profiles, ...derived];
+  return [...visibleProfiles, ...derived];
 }

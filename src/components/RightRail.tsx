@@ -36,7 +36,13 @@ export function RightRail() {
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
-            <button key={tab.id} className={activeRightPanel === tab.id ? 'is-active' : ''} title={tab.label} onClick={() => activatePanel(tab.id)}>
+            <button
+              key={tab.id}
+              className={activeRightPanel === tab.id ? 'is-active' : ''}
+              title={tab.label}
+              data-tutorial={`panel-${tab.id}`}
+              onClick={() => activatePanel(tab.id)}
+            >
               <Icon size={17} />
             </button>
           );

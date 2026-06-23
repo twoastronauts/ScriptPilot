@@ -243,10 +243,10 @@ export function OutlineEditorStrip() {
 
   return (
     <section className={expanded ? 'outline-editor-strip is-expanded' : 'outline-editor-strip'} aria-label="Outline editor">
-      <div className="outline-editor-labels">
+        <div className="outline-editor-labels">
         <strong>Outline</strong>
         <span>Acts</span>
-        <span>Sequences</span>
+        <span>Beats</span>
         <span>Scenes</span>
         <span>Pages</span>
         <span>Script</span>
@@ -352,7 +352,7 @@ export function OutlineEditorStrip() {
             <button
               key={scene.element.id}
               className={scene.element.id === selectedElementId ? 'outline-beat outline-beat--scene is-active' : 'outline-beat outline-beat--scene'}
-              style={sceneAnchorStyle(scene.page, pageCount, document.structureRanges[scene.index % Math.max(1, document.structureRanges.length)]?.color ?? '#55b8c7')}
+              style={sceneAnchorStyle(scene.page, pageCount, colorForPage(scene.page, actRanges))}
               onClick={() => setSelectedElement(scene.element.id)}
               onDoubleClick={(event) => {
                 event.stopPropagation();
@@ -362,7 +362,7 @@ export function OutlineEditorStrip() {
                 title: scene.element.text || `Scene ${scene.index + 1}`,
                 meta: `pg. ${scene.page}`,
                 body: scene.summary || 'No scene summary yet.',
-                color: document.structureRanges[scene.index % Math.max(1, document.structureRanges.length)]?.color ?? '#55b8c7'
+                color: colorForPage(scene.page, actRanges)
               })}
             >
               <Film size={12} />
@@ -384,7 +384,7 @@ export function OutlineEditorStrip() {
             <button
               key={scene.element.id}
               className={scene.element.id === selectedElementId ? 'outline-scene is-active' : 'outline-scene'}
-              style={sceneAnchorStyle(scene.page, pageCount, document.structureRanges[scene.index % Math.max(1, document.structureRanges.length)]?.color ?? '#55b8c7')}
+              style={sceneAnchorStyle(scene.page, pageCount, colorForPage(scene.page, actRanges))}
               onClick={() => setSelectedElement(scene.element.id)}
               onDoubleClick={(event) => {
                 event.stopPropagation();
@@ -651,6 +651,11 @@ function rangeStyle(startPage: number, endPage: number, pageCount: number, color
     left: `${leftForPage(startPage, pageCount)}%`,
     width: `${widthForPages(startPage, endPage, pageCount)}%`
   } as React.CSSProperties;
+}
+
+function colorForPage(page: number, actRanges: MapRange[]): string {
+  const containing = actRanges.find((range) => page >= range.startPage && page <= range.endPage);
+  return containing?.color ?? '#55b8c7';
 }
 
 function leftForPage(page: number, pageCount: number): number {

@@ -502,7 +502,7 @@ export function buildProductionContacts(document: ScriptDocument, scenes: Produc
   }
 
   const profileByName = new Map<string, CharacterProfile>();
-  for (const profile of document.characters) {
+  for (const profile of document.characters.filter((item) => !item.hidden)) {
     profileByName.set(normalizeCharacterName(profile.name), profile);
     for (const alias of profile.aliases) profileByName.set(normalizeCharacterName(alias), profile);
   }
@@ -511,7 +511,7 @@ export function buildProductionContacts(document: ScriptDocument, scenes: Produc
   for (const scene of scenes) {
     for (const character of scene.characters) addUnique(characterNames, character);
   }
-  for (const profile of document.characters) addUnique(characterNames, normalizeCharacterName(profile.name));
+  for (const profile of document.characters.filter((item) => !item.hidden)) addUnique(characterNames, normalizeCharacterName(profile.name));
 
   for (const character of characterNames) {
     const profile = profileByName.get(character);
@@ -671,7 +671,7 @@ function collectBoardTags(scenes: ProductionSceneBreakdown[]): ProductionTagSumm
 
 function collectBoardCharacters(document: ScriptDocument, scenes: ProductionSceneBreakdown[]): ProductionCharacterSummary[] {
   const profiles = new Map<string, CharacterProfile>();
-  for (const profile of document.characters) profiles.set(normalizeCharacterName(profile.name), profile);
+  for (const profile of document.characters.filter((item) => !item.hidden)) profiles.set(normalizeCharacterName(profile.name), profile);
 
   const characters = new Map<string, ProductionCharacterSummary>();
   for (const scene of scenes) {
@@ -697,7 +697,7 @@ function collectBoardCharacters(document: ScriptDocument, scenes: ProductionScen
     }
   }
 
-  for (const profile of document.characters) {
+  for (const profile of document.characters.filter((item) => !item.hidden)) {
     const character = normalizeCharacterName(profile.name);
     if (!characters.has(character)) {
       characters.set(character, {

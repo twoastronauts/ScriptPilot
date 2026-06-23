@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type * as React from 'react';
-import { Eraser, Plus, Sparkles } from 'lucide-react';
+import { Check, Eraser, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { buildProductionReports } from '@/shared/reports';
 import { useWorkspace } from '@/store/workspace';
 import type { ProductionTag } from '@/shared/types';
@@ -18,7 +18,9 @@ export function ProductionPanel() {
     setActiveRevisionSet,
     updateRevisionSet,
     markSelectedRevised,
-    clearSelectedRevision
+    clearSelectedRevision,
+    updateScriptNote,
+    deleteScriptNote
   } = useWorkspace();
   const selected = document.elements.find((element) => element.id === selectedElementId);
   const activeRevision = document.revisions.find((revision) => revision.active) ?? document.revisions[0];
@@ -81,10 +83,15 @@ export function ProductionPanel() {
         <h3>Selected line notes</h3>
         {selected?.notes.length ? (
           selected.notes.map((scriptNote) => (
-            <article key={scriptNote.id} className="note-row" style={{ '--note-color': scriptNote.color } as React.CSSProperties}>
-              <strong>{scriptNote.text}</strong>
-              <small>{selected.type}</small>
-            </article>
+            <NoteEditor
+              key={scriptNote.id}
+              elementId={selected.id}
+              elementType={selected.type}
+              lineText={selected.text}
+              note={scriptNote}
+              onUpdate={updateScriptNote}
+              onDelete={deleteScriptNote}
+            />
           ))
         ) : (
           <p className="empty-copy">No notes on the selected line.</p>
@@ -93,12 +100,15 @@ export function ProductionPanel() {
         <h3>All script notes</h3>
         {scriptNotes.length ? (
           scriptNotes.map((scriptNote) => (
-            <article key={scriptNote.id} className="note-row" style={{ '--note-color': scriptNote.color } as React.CSSProperties}>
-              <strong>{scriptNote.text}</strong>
-              <small>
-                {scriptNote.elementType} - {scriptNote.lineText || 'Blank line'}
-              </small>
-            </article>
+            <NoteEditor
+              key={`${scriptNote.elementId}:${scriptNote.id}`}
+              elementId={scriptNote.elementId}
+              elementType={scriptNote.elementType}
+              lineText={scriptNote.lineText}
+              note={scriptNote}
+              onUpdate={updateScriptNote}
+              onDelete={deleteScriptNote}
+            />
           ))
         ) : (
           <p className="empty-copy">No script notes yet.</p>
@@ -173,5 +183,54 @@ export function ProductionPanel() {
         </div>
       ))}
     </section>
+  );
+}
+
+function NoteEditor({
+  elementId,
+  elementType,
+  lineText,
+  note,
+  onUpdate,
+  onDelete
+}: {
+  elementId: string;
+  elementType: string;
+  lineText: string;
+  note: { id: string; text: string; color: string; resolved: boolean };
+  onUpdate: (elementId: string, noteId: string, patch: { text?: string; color?: string; resolved?: boolean }) => void;
+  onDelete: (elementId: string, noteId: string) => void;
+}) {
+  const [draft, setDraft] = useState(note.text);
+
+  useEffect(() => {
+    setDraft(note.text);
+  }, [note.text]);
+
+  return (
+    <article className={note.resolved ? 'note-row is-resolved' : 'note-row'} style={{ '--note-color': note.color } as React.CSSProperties}>
+      <textarea
+        aria-label="Script note text"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={() => {
+          const next = draft.trim();
+          if (next && next !== note.text) onUpdate(elementId, note.id, { text: next });
+          if (!next) setDraft(note.text);
+        }}
+      />
+      <small>
+        {elementType} - {lineText || 'Blank line'}
+      </small>
+      <div className="note-row__actions">
+        <input aria-label="Note color" type="color" value={note.color} onChange={(event) => onUpdate(elementId, note.id, { color: event.target.value })} />
+        <button title={note.resolved ? 'Reopen note' : 'Resolve note'} onClick={() => onUpdate(elementId, note.id, { resolved: !note.resolved })}>
+          <Check size={13} />
+        </button>
+        <button className="danger" title="Delete note" onClick={() => onDelete(elementId, note.id)}>
+          <Trash2 size={13} />
+        </button>
+      </div>
+    </article>
   );
 }

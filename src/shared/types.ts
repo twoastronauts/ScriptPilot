@@ -283,6 +283,7 @@ export interface CharacterProfile {
   id: string;
   name: string;
   color: string;
+  hidden?: boolean;
   voice?: string;
   aliases: string[];
   notes?: string;

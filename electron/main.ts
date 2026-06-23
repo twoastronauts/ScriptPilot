@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell, systemPreferences } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -84,6 +84,9 @@ function createMainWindow(): void {
 
 function installMediaPermissions(window: BrowserWindow): void {
   const session = window.webContents.session;
+  if (process.platform === 'darwin') {
+    void systemPreferences.askForMediaAccess('microphone').catch(() => false);
+  }
   session.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'media');
   });

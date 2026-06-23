@@ -28,7 +28,7 @@ import {
 import { useWorkspace } from '@/store/workspace';
 import { createDocumentFromPlainText } from '@/shared/defaultDocument';
 import { ELEMENT_LABELS } from '@/shared/screenplay';
-import { playTypewriterReturnBell } from '@/shared/typewriterSound';
+import { playSprintTimerChime, playTypewriterReturnBell } from '@/shared/typewriterSound';
 import type { ScriptElementType, TextStyle, ViewMode } from '@/shared/types';
 import scriptPilotIcon from '@/assets/script-pilot-icon.png';
 import { TextFormatControls } from './TextFormatControls';
@@ -248,7 +248,7 @@ export function Toolbar() {
       </div>
       <div className="toolbar__group toolbar__screenplay">
         <ElementMenu selectedType={selectedType} onSelect={setSelectedElementType} />
-        <div className="format-menu">
+        <div className="format-menu" data-tutorial="formatting">
           <button
             title="Formatting panel (Ctrl+Shift+F)"
             className={formatOpen ? 'is-active' : ''}
@@ -270,7 +270,7 @@ export function Toolbar() {
         >
           <Highlighter size={17} />
         </button>
-        <button title="Alt Word synonyms" onClick={() => window.dispatchEvent(new CustomEvent('scriptpilot:request-synonyms'))}>
+        <button title="Alt Word synonyms" data-tutorial="alt-word" onClick={() => window.dispatchEvent(new CustomEvent('scriptpilot:request-synonyms'))}>
           <Sparkles size={17} />
         </button>
         <button title="Spelling suggestions" onClick={() => window.dispatchEvent(new CustomEvent('scriptpilot:request-spelling'))}>
@@ -305,14 +305,14 @@ export function Toolbar() {
         </button>
       </div>
       <div className="toolbar__group">
-        <button title="Typewriter mode" className={document.settings.typewriterMode ? 'is-active' : ''} onClick={toggleTypewriterMode}>
+        <button title="Typewriter mode" data-tutorial="typewriter" className={document.settings.typewriterMode ? 'is-active' : ''} onClick={toggleTypewriterMode}>
           <Keyboard size={18} />
         </button>
-        <button title={focusTitle} className={document.settings.focusMode ? 'is-active' : ''} onClick={toggleFocusMode}>
+        <button title={focusTitle} data-tutorial="focus" className={document.settings.focusMode ? 'is-active' : ''} onClick={toggleFocusMode}>
           <Crosshair size={18} />
         </button>
         <div className="sprint-stack">
-          <button title={sprintTitle} className={sprintStartedAt ? 'is-active sprint-button' : 'sprint-button'} onClick={sprintStartedAt ? stopSprint : startSprint}>
+          <button title={sprintTitle} data-tutorial="sprint" className={sprintStartedAt ? 'is-active sprint-button' : 'sprint-button'} onClick={sprintStartedAt ? stopSprint : startSprint}>
             <Timer size={18} />
             {sprintLabel && <span>{sprintLabel}</span>}
           </button>
@@ -418,5 +418,5 @@ function fileNameFromPath(value: string): string {
 }
 
 function playSprintChime(volume: number): void {
-  playTypewriterReturnBell(Math.max(0.15, Math.min(1, volume || 0.45)));
+  playSprintTimerChime(Math.max(0.08, Math.min(0.7, volume || 0.25)));
 }

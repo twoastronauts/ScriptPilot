@@ -10,7 +10,7 @@ import { TitlePageEditor } from './components/TitlePageEditor';
 import { Toolbar } from './components/Toolbar';
 import { TutorialOverlay } from './components/TutorialOverlay';
 import { themeColorsToCssVariables } from './shared/themeColors';
-import { playTypewriterKey } from './shared/typewriterSound';
+import { playTypewriterKey, primeTypewriterAudio } from './shared/typewriterSound';
 import { useWorkspace } from './store/workspace';
 
 export function App() {
@@ -68,14 +68,24 @@ export function App() {
       workspaceView !== 'editor'
     ) return;
 
+    function prime() {
+      primeTypewriterAudio();
+    }
+
     function play(event: KeyboardEvent) {
       if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (event.repeat) return;
       playTypewriterKey(event.key, document.settings.typewriterVolume, document.settings.typewriterBellVolume);
     }
 
+    window.addEventListener('pointerdown', prime, true);
+    window.addEventListener('keydown', prime, true);
     window.addEventListener('keydown', play, true);
-    return () => window.removeEventListener('keydown', play, true);
+    return () => {
+      window.removeEventListener('pointerdown', prime, true);
+      window.removeEventListener('keydown', prime, true);
+      window.removeEventListener('keydown', play, true);
+    };
   }, [document.settings.typewriterBellVolume, document.settings.typewriterMode, document.settings.typewriterSounds, document.settings.typewriterVolume, workspaceView]);
 
   useEffect(() => {
