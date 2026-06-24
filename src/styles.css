@@ -426,6 +426,53 @@ textarea {
   box-shadow: var(--shadow-button);
 }
 
+.toolbar-menu {
+  position: relative;
+}
+
+.toolbar-menu > button {
+  gap: 5px;
+  padding-inline: 8px;
+}
+
+.toolbar-menu > button span {
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.toolbar-menu__popover {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 0;
+  z-index: 55;
+  width: 210px;
+  display: grid;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--panel-raised);
+  box-shadow: var(--shadow-popover);
+}
+
+.toolbar-menu__popover button {
+  width: 100%;
+  min-height: 30px;
+  justify-content: flex-start;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.toolbar-menu__popover button:hover {
+  background: var(--accent-soft);
+  color: var(--text-strong);
+}
+
 .toolbar__screenplay {
   min-width: 0;
 }
@@ -2090,12 +2137,12 @@ kbd {
   --script-page-width: 8.5in;
   --script-page-height: 11in;
   --script-page-gap: 54px;
-  --script-left-margin: clamp(44px, 17%, 1.5in);
-  --script-right-margin: clamp(28px, 11%, 1in);
-  --script-top-margin: clamp(34px, 9%, 1in);
-  --script-bottom-margin: clamp(36px, 8%, 1in);
-  --script-paragraph-gap: 0.025in;
-  --script-section-gap: 0.16in;
+  --script-left-margin: 1.5in;
+  --script-right-margin: 1in;
+  --script-top-margin: 1in;
+  --script-bottom-margin: 1in;
+  --script-paragraph-gap: 0;
+  --script-section-gap: 0.18in;
   position: relative;
   width: var(--script-page-width);
   min-width: 0;
@@ -2193,7 +2240,7 @@ kbd {
   min-height: 9.5in;
   font-family: var(--font-script);
   font-size: 12pt;
-  line-height: 1.06;
+  line-height: 1;
   letter-spacing: 0;
   white-space: pre-wrap;
 }
@@ -2312,7 +2359,7 @@ kbd {
   font-style: var(--line-style, normal);
   text-decoration: var(--line-decoration, none);
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   word-break: normal;
   border-radius: 3px;
   transition: opacity var(--duration-med) ease;
@@ -2332,22 +2379,22 @@ kbd {
 .script-line.character {
   --line-left: 2.2in;
   --line-width: 2.35in;
-  margin-top: 0.1in;
+  margin-top: 0.12in;
   margin-bottom: 0;
-  text-align: center;
+  text-align: left;
   text-transform: uppercase;
 }
 
 .script-line.parenthetical {
-  --line-left: 1.55in;
-  --line-width: 2.45in;
+  --line-left: 1.6in;
+  --line-width: 2.25in;
   margin-bottom: 0;
 }
 
 .script-line.dialogue {
   --line-left: 1in;
   --line-width: 3.5in;
-  margin-bottom: 0.1in;
+  margin-bottom: 0.12in;
 }
 
 .script-line.transition {

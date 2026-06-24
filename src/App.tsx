@@ -32,6 +32,8 @@ export function App() {
     setOutlineHeight,
     recordBackup,
     setBackupDirectory,
+    finishProjectSave,
+    finishFdxSave,
     setWarning
   } = useWorkspace();
   const focusMode = document.settings.focusMode;
@@ -59,6 +61,29 @@ export function App() {
   useEffect(() => {
     window.screenwriter?.setWindowTitle({ title: document.title || 'Untitled Script', dirty });
   }, [document.title, dirty]);
+
+  useEffect(() => {
+    return window.screenwriter?.onSaveBeforeClose?.(async () => {
+      let saved = false;
+      try {
+        if (fdxPath && !projectPath) {
+          const result = await window.screenwriter?.saveFdx(document, fdxPath);
+          if (result && !result.canceled) {
+            finishFdxSave(result.data, result.path);
+            saved = true;
+          }
+        } else {
+          const result = await window.screenwriter?.saveProject(document, projectPath);
+          if (result && !result.canceled) {
+            finishProjectSave(result.data, result.path);
+            saved = true;
+          }
+        }
+      } finally {
+        await window.screenwriter?.closeAfterSave?.(saved);
+      }
+    });
+  }, [document, fdxPath, finishFdxSave, finishProjectSave, projectPath]);
 
   useEffect(() => {
     if (

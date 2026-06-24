@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   Bell,
   BellOff,
   ChevronDown,
   CloudMoon,
   Crosshair,
-  Download,
   FileDown,
   FileInput,
   FileJson,
@@ -22,8 +22,7 @@ import {
   Timer,
   Type,
   Redo2,
-  Undo2,
-  Wand2
+  Undo2
 } from 'lucide-react';
 import { useWorkspace } from '@/store/workspace';
 import { createDocumentFromPlainText } from '@/shared/defaultDocument';
@@ -74,6 +73,7 @@ export function Toolbar() {
   const [sprintNow, setSprintNow] = useState(() => Date.now());
   const [sprintNotice, setSprintNotice] = useState<string | null>(null);
   const [formatOpen, setFormatOpen] = useState(false);
+  const [openToolbarMenu, setOpenToolbarMenu] = useState<'save' | 'export' | null>(null);
   const lastChimeRef = useRef(0);
   const noticeTimeoutRef = useRef<number | undefined>(undefined);
   const selected = document.elements.find((element) => element.id === selectedElementId);
@@ -126,8 +126,16 @@ export function Toolbar() {
     setDocument(result.data, { projectPath: result.path });
   }
 
-  async function saveProject() {
-    const result = await window.screenwriter?.saveProject(document, projectPath);
+  async function saveProject(path = projectPath) {
+    const result = await window.screenwriter?.saveProject(document, path);
+    if (!result || result.canceled) return;
+    finishProjectSave(result.data, result.path);
+    setWarning(`Saved project: ${result.path}`);
+    playTypewriterReturnBell(document.settings.typewriterBellVolume);
+  }
+
+  async function saveProjectAs() {
+    const result = await window.screenwriter?.saveProject(document, undefined);
     if (!result || result.canceled) return;
     finishProjectSave(result.data, result.path);
     setWarning(`Saved project: ${result.path}`);
@@ -140,15 +148,23 @@ export function Toolbar() {
     setDocument(result.data, { fdxPath: result.path });
   }
 
-  async function saveFdx() {
-    const result = await window.screenwriter?.saveFdx(document, fdxPath);
+  async function saveFdx(path = fdxPath) {
+    const result = await window.screenwriter?.saveFdx(document, path);
     if (!result || result.canceled) return;
     finishFdxSave(result.data, result.path);
     setWarning(`Saved FDX: ${result.path}`);
     playTypewriterReturnBell(document.settings.typewriterBellVolume);
   }
 
-  async function exportPdf() {
+  async function saveFdxAs() {
+    const result = await window.screenwriter?.saveFdx(document, undefined);
+    if (!result || result.canceled) return;
+    finishFdxSave(result.data, result.path);
+    setWarning(`Saved FDX: ${result.path}`);
+    playTypewriterReturnBell(document.settings.typewriterBellVolume);
+  }
+
+  async function exportPdf(nolanMode = false) {
     const result = await window.screenwriter?.exportPdf(document, {
       includeTitlePage: document.settings.exportIncludeTitlePage,
       includeNotes: document.settings.exportIncludeNotes,
@@ -156,8 +172,8 @@ export function Toolbar() {
       includeWatermark: false,
       matchDisplayColors: false,
       openAfterExport: document.settings.exportOpenFolder,
-      nolanMode: false,
-      promptForNolanMode: true
+      nolanMode,
+      promptForNolanMode: false
     });
     if (result && !result.canceled) {
       setWarning(`Exported PDF: ${result.path}`);
@@ -222,28 +238,37 @@ export function Toolbar() {
         <button title="Open project" onClick={openProject}>
           <FolderOpen size={18} />
         </button>
-        <button title="Save project" onClick={saveProject}>
-          <Save size={18} />
-        </button>
         <button title="Open FDX" onClick={openFdx}>
           <FileInput size={18} />
         </button>
-        <button title="Save FDX" onClick={saveFdx}>
-          <Download size={18} />
-        </button>
-        <button title="Export PDF" onClick={exportPdf}>
-          <FileDown size={18} />
-        </button>
+        <ToolbarMenu
+          id="save"
+          label="Save"
+          icon={Save}
+          open={openToolbarMenu === 'save'}
+          onToggle={() => setOpenToolbarMenu((value) => (value === 'save' ? null : 'save'))}
+          onClose={() => setOpenToolbarMenu(null)}
+        >
+          <button onClick={() => saveProject()}>Save Script Pilot project</button>
+          <button onClick={saveProjectAs}>Save project as...</button>
+          <button onClick={() => saveFdx()}>Save FDX</button>
+          <button onClick={saveFdxAs}>Save FDX as...</button>
+        </ToolbarMenu>
+        <ToolbarMenu
+          id="export"
+          label="Export"
+          icon={FileDown}
+          open={openToolbarMenu === 'export'}
+          onToggle={() => setOpenToolbarMenu((value) => (value === 'export' ? null : 'export'))}
+          onClose={() => setOpenToolbarMenu(null)}
+        >
+          <button onClick={() => exportPdf(false)}>PDF</button>
+          <button onClick={() => exportPdf(true)}>PDF - Nolan proof style</button>
+          <button onClick={importTextPdf}>Import text/PDF...</button>
+          <button onClick={createBackup}>Create backup</button>
+        </ToolbarMenu>
         <button title={showTitlePage ? 'Hide title page' : 'Title page'} className={showTitlePage ? 'is-active' : ''} onClick={toggleTitlePage}>
           <FileText size={18} />
-        </button>
-      </div>
-      <div className="toolbar__group">
-        <button title="Import text/PDF" onClick={importTextPdf}>
-          <Wand2 size={18} />
-        </button>
-        <button title="Create backup" onClick={createBackup}>
-          <Save size={18} />
         </button>
       </div>
       <div className="toolbar__group toolbar__screenplay">
@@ -394,6 +419,56 @@ function ElementMenu({ selectedType, onSelect }: { selectedType: ScriptElementTy
               <kbd>{shortcutForType(type)}</kbd>
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolbarMenu({
+  id,
+  label,
+  icon: Icon,
+  open,
+  onToggle,
+  onClose,
+  children
+}: {
+  id: string;
+  label: string;
+  icon: typeof Save;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (!menuRef.current?.contains(event.target as Node)) onClose();
+    }
+    window.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => window.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, [onClose, open]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="toolbar-menu"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) onClose();
+      }}
+    >
+      <button title={label} aria-haspopup="menu" aria-expanded={open} aria-controls={`toolbar-menu-${id}`} onClick={onToggle}>
+        <Icon size={18} />
+        <span>{label}</span>
+        <ChevronDown size={13} />
+      </button>
+      {open && (
+        <div id={`toolbar-menu-${id}`} className="toolbar-menu__popover" role="menu" onClick={onClose}>
+          {children}
         </div>
       )}
     </div>

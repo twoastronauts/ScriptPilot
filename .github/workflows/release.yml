@@ -22,11 +22,11 @@ jobs:
           - name: Windows
             os: windows-latest
             command: npm run dist:win
-            artifact: Script-Pilot-V02-Windows
+            artifact: Script-Pilot-Windows
           - name: macOS
             os: macos-latest
             command: npm run dist:mac
-            artifact: Script-Pilot-V02-Mac
+            artifact: Script-Pilot-Mac
 
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
@@ -86,8 +86,8 @@ jobs:
     if: github.event_name == 'push'
     env:
       GH_TOKEN: ${{ github.token }}
-      RELEASE_TAG: v0.2.0
-      RELEASE_TITLE: Script Pilot V02 0.2.0
+      RELEASE_TAG: v1.0.0
+      RELEASE_TITLE: Script Pilot 1.0.0
 
     steps:
       - name: Checkout
@@ -104,14 +104,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-upload
-          cp release-artifacts/Script-Pilot-V02-0.2.0-x64.exe release-upload/Script-Pilot-V02-0.2.0-Windows-x64.exe
-          cp release-artifacts/Script-Pilot-V02-0.2.0-universal.dmg release-upload/Script-Pilot-V02-0.2.0-macOS-universal.dmg
+          cp release-artifacts/Script-Pilot-1.0.0-x64.exe release-upload/Script-Pilot-1.0.0-Windows-x64.exe
+          cp release-artifacts/Script-Pilot-1.0.0-universal.dmg release-upload/Script-Pilot-1.0.0-macOS-universal.dmg
           cat > release-notes.md <<'NOTES'
-          Latest Script Pilot V02 installer refresh.
+          First official Script Pilot installer build.
 
           Assets:
-          - Script-Pilot-V02-0.2.0-Windows-x64.exe
-          - Script-Pilot-V02-0.2.0-macOS-universal.dmg
+          - Script-Pilot-1.0.0-Windows-x64.exe
+          - Script-Pilot-1.0.0-macOS-universal.dmg
 
           The macOS build is unsigned/unnotarized until Apple signing credentials are added.
           NOTES

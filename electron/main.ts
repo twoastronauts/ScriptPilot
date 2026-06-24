@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell, systemPreferences } from 'electron';
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, shell } from 'electron';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -34,7 +34,7 @@ import type { CollabHostStatus, CollabInvite, CollabPermission, CollabSession, R
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.NODE_ENV === 'development';
-const APP_DISPLAY_NAME = 'Script Pilot V02';
+const APP_DISPLAY_NAME = 'Script Pilot';
 const PROJECT_EXTENSIONS = ['spx', 'spx2', 'astrostory', 'json'];
 const COLLAB_HOST_ADDRESS = '0.0.0.0';
 
@@ -42,6 +42,8 @@ app.setName(APP_DISPLAY_NAME);
 app.setPath('userData', path.join(app.getPath('appData'), APP_DISPLAY_NAME));
 
 let mainWindow: BrowserWindow | null = null;
+let closeConfirmed = false;
+let closeState: WindowTitlePayload = { title: 'Untitled Script', dirty: false };
 
 interface CollabHostRecord {
   server: Server;
@@ -53,6 +55,8 @@ interface CollabHostRecord {
 const collabHosts = new Map<string, CollabHostRecord>();
 
 function createMainWindow(): void {
+  closeConfirmed = false;
+  closeState = { title: 'Untitled Script', dirty: false };
   mainWindow = new BrowserWindow({
     width: 1480,
     height: 940,
@@ -80,17 +84,40 @@ function createMainWindow(): void {
 
   installMediaPermissions(mainWindow);
   installSpellcheckMenu(mainWindow);
+  installCloseGuard(mainWindow);
 }
 
 function installMediaPermissions(window: BrowserWindow): void {
   const session = window.webContents.session;
-  if (process.platform === 'darwin') {
-    void systemPreferences.askForMediaAccess('microphone').catch(() => false);
-  }
   session.setPermissionRequestHandler((_webContents, permission, callback) => {
     callback(permission === 'media');
   });
   session.setPermissionCheckHandler((_webContents, permission) => permission === 'media');
+}
+
+function installCloseGuard(window: BrowserWindow): void {
+  window.on('close', (event) => {
+    if (closeConfirmed || !closeState.dirty) return;
+    event.preventDefault();
+    const response = dialog.showMessageBoxSync(window, {
+      type: 'warning',
+      buttons: ['Save', 'Discard', 'Cancel'],
+      defaultId: 0,
+      cancelId: 2,
+      message: 'Save changes before closing?',
+      detail: `${closeState.title || 'Untitled Script'} has unsaved changes.`
+    });
+
+    if (response === 1) {
+      closeConfirmed = true;
+      window.close();
+      return;
+    }
+
+    if (response === 0) {
+      window.webContents.send('window:save-before-close');
+    }
+  });
 }
 
 function installSpellcheckMenu(window: BrowserWindow): void {
@@ -139,6 +166,7 @@ function windowTitle(payload: WindowTitlePayload): string {
 }
 
 function setMainWindowTitle(payload: WindowTitlePayload): void {
+  closeState = payload;
   mainWindow?.setTitle(windowTitle(payload));
 }
 
@@ -308,7 +336,7 @@ ipcMain.handle('file:save-project', async (_event, document: ScriptDocument, exi
   const firstSave = !filePath;
   if (!filePath) {
     const result = await dialog.showSaveDialog({
-      title: 'Save Script Pilot V02 project',
+      title: 'Save Script Pilot project',
       defaultPath: `${document.title || 'Untitled'}.spx`,
       filters: [{ name: 'Script Pilot Project', extensions: ['spx'] }]
     });
@@ -498,6 +526,12 @@ ipcMain.handle('file:restore-backup', async (): Promise<FileResult<ScriptDocumen
 
 ipcMain.handle('window:set-title', async (_event, payload: WindowTitlePayload): Promise<void> => {
   setMainWindowTitle(payload);
+});
+
+ipcMain.handle('window:close-after-save', async (_event, shouldClose: boolean): Promise<void> => {
+  if (!shouldClose || !mainWindow) return;
+  closeConfirmed = true;
+  mainWindow.close();
 });
 
 ipcMain.handle('clipboard:copy', async (_event, text: string): Promise<FileResult<ClipboardResult>> => {

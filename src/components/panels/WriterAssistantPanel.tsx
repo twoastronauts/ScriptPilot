@@ -15,16 +15,22 @@ export function WriterAssistantPanel() {
   const requestIdRef = useRef(0);
   const workerRef = useRef<Worker | null>(null);
   const documentKey = useMemo(
-    () => `${document.id}:${document.updatedAt}:${document.elements.length}:${document.settings.pageNumberStart}`,
-    [document.elements.length, document.id, document.settings.pageNumberStart, document.updatedAt]
+    () =>
+      [
+        document.id,
+        document.settings.pageNumberStart,
+        document.elements
+          .map((element) => `${element.id}:${element.type}:${element.text}:${element.revisionColor ?? ''}:${element.notes.length}:${element.productionTags.length}`)
+          .join('|')
+      ].join('::'),
+    [document.elements, document.id, document.settings.pageNumberStart]
   );
 
   useEffect(() => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
-    setAnalyzing(true);
-    setAnalysisError(null);
     const leanDocument = leanDoctorDocument(document);
+    const analyzingNotice = window.setTimeout(() => setAnalyzing(true), 180);
 
     const startAnalysis = window.setTimeout(() => {
       if (typeof Worker !== 'undefined') {
@@ -37,7 +43,9 @@ export function WriterAssistantPanel() {
             setAnalysisError(event.data.error);
           } else {
             setAnalysis({ report: event.data.report, stats: event.data.stats, pagination: event.data.pagination });
+            setAnalysisError(null);
           }
+          window.clearTimeout(analyzingNotice);
           setAnalyzing(false);
           worker.terminate();
           if (workerRef.current === worker) workerRef.current = null;
@@ -50,6 +58,7 @@ export function WriterAssistantPanel() {
           } catch {
             setAnalysisError(error.message || 'Script Doctor worker failed.');
           }
+          window.clearTimeout(analyzingNotice);
           setAnalyzing(false);
           worker.terminate();
           if (workerRef.current === worker) workerRef.current = null;
@@ -64,14 +73,17 @@ export function WriterAssistantPanel() {
 
       try {
         setAnalysis(computeDoctorAnalysis(leanDocument));
+        setAnalysisError(null);
       } catch (error) {
         setAnalysisError(error instanceof Error ? error.message : 'Script Doctor failed.');
       } finally {
+        window.clearTimeout(analyzingNotice);
         setAnalyzing(false);
       }
-    }, document.fdxShadow ? 240 : 80);
+    }, document.fdxShadow ? 420 : 120);
 
     return () => {
+      window.clearTimeout(analyzingNotice);
       window.clearTimeout(startAnalysis);
       workerRef.current?.terminate();
       workerRef.current = null;

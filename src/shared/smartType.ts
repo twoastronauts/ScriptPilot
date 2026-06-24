@@ -1,7 +1,7 @@
 import { normalizeCharacterName } from './screenplay';
 import type { ScriptDocument, ScriptElementType } from './types';
 
-export type SmartTypeKind = 'scene-heading' | 'character' | 'transition';
+export type SmartTypeKind = 'scene-heading' | 'character' | 'transition' | 'character-parenthetical';
 
 export interface SmartTypeOption {
   id: string;
@@ -14,6 +14,15 @@ export interface SmartTypeOption {
 
 const SCENE_PREFIXES = ['INT.', 'EXT.', 'EST.', 'INT./EXT.', 'I/E.'];
 const TIMES_OF_DAY = ['DAY', 'NIGHT', 'MORNING', 'AFTERNOON', 'EVENING', 'DAWN', 'DUSK', 'CONTINUOUS', 'LATER', 'SAME TIME'];
+const CHARACTER_PARENTHETICALS = [
+  { suffix: 'V.O.', detail: 'Voice over' },
+  { suffix: 'O.S.', detail: 'Off screen' },
+  { suffix: "CONT'D", detail: 'Continued dialogue' },
+  { suffix: 'O.C.', detail: 'Off camera' },
+  { suffix: 'PRE-LAP', detail: 'Heard before the scene begins' },
+  { suffix: 'FILTERED', detail: 'Processed voice' },
+  { suffix: 'ON PHONE', detail: 'Phone or device audio' }
+];
 export const TRANSITIONS = [
   'CUT TO:',
   'SMASH CUT TO:',
@@ -53,6 +62,10 @@ export function collectSmartTypeOptions(document: ScriptDocument, currentType: S
 
   if (currentType === 'character' && looksLikeCharacterStart(normalizedQuery, currentType)) {
     options.push(...characterOptions(document, normalizedQuery));
+  }
+
+  if (currentType === 'character' && looksLikeCharacterParentheticalStart(normalizedQuery)) {
+    options.push(...characterParentheticalOptions(normalizedQuery));
   }
 
   if (currentType === 'transition' || looksLikeTransitionStart(normalizedQuery)) {
@@ -114,6 +127,16 @@ function sceneHeadingOptions(document: ScriptDocument, query: string): SmartType
   return [...prefixOptions, ...existingHeadings, ...locationOptions, ...timeOptions];
 }
 
+function characterParentheticalOptions(query: string): SmartTypeOption[] {
+  const openIndex = query.indexOf('(');
+  const baseName = query.slice(0, openIndex).trim().replace(/\s+$/, '');
+  if (!baseName) return [];
+  return CHARACTER_PARENTHETICALS.map((item) => {
+    const replacement = `${baseName} (${item.suffix})`;
+    return option('character-parenthetical', replacement, item.detail, replacement, 'character');
+  });
+}
+
 function characterOptions(document: ScriptDocument, query: string): SmartTypeOption[] {
   const profileNames = document.characters.flatMap((character) => [character.name, ...character.aliases]);
   const scriptNames = document.elements.filter((element) => element.type === 'character').map((element) => normalizeCharacterName(element.text));
@@ -162,6 +185,10 @@ function looksLikeSceneHeadingStart(query: string): boolean {
 function looksLikeCharacterStart(query: string, currentType: ScriptElementType): boolean {
   if (currentType === 'dialogue' || currentType === 'parenthetical') return false;
   return /^[A-Z][A-Z0-9 .'()-]{0,28}$/.test(query) && !looksLikeSceneHeadingStart(query);
+}
+
+function looksLikeCharacterParentheticalStart(query: string): boolean {
+  return /^[A-Z][A-Z0-9 .'-]{0,36}\s+\([A-Z.' -]{0,16}$/.test(query);
 }
 
 function looksLikeTransitionStart(query: string): boolean {

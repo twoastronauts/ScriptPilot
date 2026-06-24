@@ -35,6 +35,12 @@ const api = {
   listRecentFiles: (): Promise<RecentFilesResult> => ipcRenderer.invoke('file:list-recent'),
   openRecentFile: (path: string): Promise<FileResult<ScriptDocument>> => ipcRenderer.invoke('file:open-recent', path),
   setWindowTitle: (payload: WindowTitlePayload): Promise<void> => ipcRenderer.invoke('window:set-title', payload),
+  onSaveBeforeClose: (callback: () => void | Promise<void>): (() => void) => {
+    const listener = () => void callback();
+    ipcRenderer.on('window:save-before-close', listener);
+    return () => ipcRenderer.removeListener('window:save-before-close', listener);
+  },
+  closeAfterSave: (shouldClose: boolean): Promise<void> => ipcRenderer.invoke('window:close-after-save', shouldClose),
   copyToClipboard: (text: string): Promise<FileResult<ClipboardResult>> => ipcRenderer.invoke('clipboard:copy', text),
   startCollabHost: (document: ScriptDocument, options?: StartCollabHostOptions): Promise<CollabHostResult> =>
     ipcRenderer.invoke('collab:start-host', document, options),

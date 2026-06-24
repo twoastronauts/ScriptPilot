@@ -1,6 +1,6 @@
 {
   "name": "script-pilot",
-  "version": "0.2.0",
+  "version": "1.0.0",
   "private": true,
   "description": "A local-first desktop screenwriting studio with FDX compatibility.",
   "type": "module",
@@ -55,9 +55,9 @@
     "vitest": "latest"
   },
   "build": {
-    "appId": "com.twoastronauts.scriptpilot.v02",
-    "productName": "Script Pilot V02",
-    "artifactName": "Script-Pilot-V02-${version}-${arch}.${ext}",
+    "appId": "com.twoastronauts.scriptpilot",
+    "productName": "Script Pilot",
+    "artifactName": "Script-Pilot-${version}-${arch}.${ext}",
     "directories": {
       "output": "release"
     },
