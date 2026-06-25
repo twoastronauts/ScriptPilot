@@ -59,6 +59,7 @@ export function Toolbar() {
     recordBackup,
     setViewMode,
     setPanel,
+    setRightRailCollapsed,
     toggleTypewriterMode,
     toggleFocusMode,
     startSprint,
@@ -201,6 +202,12 @@ export function Toolbar() {
     window.dispatchEvent(new CustomEvent('scriptpilot:format-selection', { detail: patch }));
   }
 
+  function openSettingsPanel() {
+    if (document.settings.focusMode) updateSettings({ focusMode: false });
+    setRightRailCollapsed(false);
+    setPanel('settings');
+  }
+
   const saveState = dirty ? 'Unsaved' : 'Saved';
   const workspaceState = document.settings.focusMode ? `Focus - ${saveState}` : saveState;
   const activePath = projectPath ?? fdxPath;
@@ -241,6 +248,9 @@ export function Toolbar() {
         <button title="Open FDX" onClick={openFdx}>
           <FileInput size={18} />
         </button>
+        <button title="Import text/PDF" onClick={importTextPdf}>
+          <FileInput size={18} />
+        </button>
         <ToolbarMenu
           id="save"
           label="Save"
@@ -264,7 +274,6 @@ export function Toolbar() {
         >
           <button onClick={() => exportPdf(false)}>PDF</button>
           <button onClick={() => exportPdf(true)}>PDF - Nolan proof style</button>
-          <button onClick={importTextPdf}>Import text/PDF...</button>
           <button onClick={createBackup}>Create backup</button>
         </ToolbarMenu>
         <button title={showTitlePage ? 'Hide title page' : 'Title page'} className={showTitlePage ? 'is-active' : ''} onClick={toggleTitlePage}>
@@ -324,7 +333,7 @@ export function Toolbar() {
             </button>
           );
         })}
-        <button title="Custom mode color options" onClick={() => setPanel('settings')}>
+        <button title="Custom mode color options" onClick={openSettingsPanel}>
           <SettingsIcon size={17} />
           <span>Custom</span>
         </button>

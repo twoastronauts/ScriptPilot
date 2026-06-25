@@ -134,24 +134,7 @@ export const screenplaySchema = new Schema({
           'data-note-preview': node.attrs.notePreview ?? '',
           style: [node.attrs.revisionColor ? `--revision:${node.attrs.revisionColor}` : '', textStyleToCssVars(node.attrs.formatStyle)].filter(Boolean).join(';')
         };
-        const noteCount = Number(node.attrs.noteCount) || 0;
-        if (!noteCount) return ['p', attrs, 0];
-        return [
-          'p',
-          attrs,
-          [
-            'span',
-            {
-              class: 'script-note-marker',
-              contenteditable: 'false',
-              'data-note-preview': node.attrs.notePreview ?? '',
-              title: node.attrs.notePreview ?? `${noteCount} note${noteCount === 1 ? '' : 's'}`,
-              'aria-label': node.attrs.notePreview ?? `${noteCount} note${noteCount === 1 ? '' : 's'}`
-            },
-            String(noteCount)
-          ],
-          0
-        ];
+        return ['p', attrs, 0];
       }
     }
   },

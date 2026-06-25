@@ -2442,7 +2442,8 @@ kbd {
   font-weight: 700;
 }
 
-.script-note-marker {
+.script-line[data-note-count]:not([data-note-count="0"])::before {
+  content: attr(data-note-count);
   position: absolute;
   right: -0.28in;
   top: 0.02in;
@@ -2462,7 +2463,7 @@ kbd {
   z-index: 5;
 }
 
-.script-note-marker::after {
+.script-line[data-note-count]:not([data-note-count="0"])::after {
   content: attr(data-note-preview);
   position: absolute;
   right: calc(100% + 8px);
@@ -2488,8 +2489,7 @@ kbd {
     transform var(--duration-fast) ease;
 }
 
-.script-note-marker:hover::after,
-.script-note-marker:focus-visible::after {
+.script-line[data-note-count]:not([data-note-count="0"]):hover::after {
   opacity: 1;
   transform: translateY(0);
 }
